@@ -1,0 +1,56 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.iml
+.idea/
+.vscode/
+
+# Environment variables (but keep .env.example tracked)
+.env
+!.env.example
+.env.*
+
+# Firebase (local only)
+firebase-debug.log*
+
+# IDE
+*.swp
+*.swo
+*~
+
+# Android
+android/app/build/
+captures/
+.google-services/
+.gradle/
+**/gradle-wrapper.properties
+!**/gradle-wrapper.properties
+
+# iOS
+ios/Pods/
+ios/Podfile.lock
+**/Podfile.lock
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+*.tmp
+Thumbs.db
+
+# Supabase local
+.supabase/
+
+# Project files
+dbSchema
+
+# Logs
+*.log
