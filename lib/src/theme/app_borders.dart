@@ -34,6 +34,45 @@ abstract final class AppBorders {
   /// Fully circular (pill/stadium shape).
   static const BorderRadius full = BorderRadius.all(Radius.circular(999));
 
+  // ── Zameel marketplace radii (numeric tokens) ─────────────────────────────
+  static const double radius4 = 4;
+  static const double radius6 = 6;
+  static const double radius8 = 8;
+  static const double radius12 = 12;
+  static const double radius16 = 16;
+  static const double radius20 = 20;
+  static const double radiusPill = 999;
+
+  /// Default card radius (12 pt) — listing cards, grouped containers.
+  static const BorderRadius cardRadius =
+      BorderRadius.all(Radius.circular(radius12));
+
+  /// Default input radius (8 pt) — solid architectural anchor.
+  static const BorderRadius inputRadius =
+      BorderRadius.all(Radius.circular(radius8));
+
+  /// Default button radius (8 pt) — consistent with inputs.
+  static const BorderRadius buttonRadius =
+      BorderRadius.all(Radius.circular(radius8));
+
+  /// Status badge radius (6 pt).
+  static const BorderRadius badgeRadius =
+      BorderRadius.all(Radius.circular(radius6));
+
+  /// Dialog radius (16 pt).
+  static const BorderRadius dialogRadius =
+      BorderRadius.all(Radius.circular(radius16));
+
+  /// Bottom-sheet top radius (20 pt).
+  static const BorderRadius bottomSheetRadius =
+      BorderRadius.vertical(top: Radius.circular(radius20));
+
+  /// Standard hairline border width.
+  static const double borderWidthHairline = 1;
+
+  /// Focused / active border width.
+  static const double borderWidthActive = 1.5;
+
   // ── Semantic aliases ──────────────────────────────────────────────────────
 
   /// Default button border radius.

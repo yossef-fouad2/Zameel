@@ -9,6 +9,7 @@ Future<void> main() async {
   await EasyLocalization.ensureInitialized();
   await dotenv.load(fileName: '.env');
 
+  await StorageService.instance.init();
   await AppConfig.init();
 
   runApp(

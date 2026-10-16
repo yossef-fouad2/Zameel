@@ -3,6 +3,8 @@ import 'package:flutter/cupertino.dart';
 
 import 'text_theme.dart';
 import 'color_schemes.dart';
+import 'app_spacing.dart';
+import 'app_borders.dart';
 
 Color _colorFromHex(String hex) {
   final cleaned = hex.replaceFirst('#', '');
@@ -85,7 +87,11 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   }
 }
 
-ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) {
+ThemeData _buildTheme(
+  ColorScheme colorScheme,
+  AppColorsExtension customColors,
+  ZameelStatusColors statusColors,
+) {
   final textTheme = buildTextTheme();
   
   return ThemeData(
@@ -95,6 +101,7 @@ ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) 
     textTheme: textTheme,
     extensions: [
       customColors,
+      statusColors,
       AppDesignTokens.fallback,
     ],
     
@@ -117,7 +124,8 @@ ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) 
       backgroundColor: colorScheme.surface,
       foregroundColor: colorScheme.onSurface,
       elevation: 0,
-      centerTitle: true,
+      scrolledUnderElevation: 1,
+      centerTitle: false,
       titleTextStyle: textTheme.titleMedium?.copyWith(
         fontWeight: FontWeight.w600,
         color: colorScheme.onSurface,
@@ -129,9 +137,9 @@ ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) 
       style: ElevatedButton.styleFrom(
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
-        minimumSize: const Size(88, 48),
+        minimumSize: const Size.fromHeight(48),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
         elevation: 0,
       ).copyWith(
         elevation: WidgetStateProperty.resolveWith((states) {
@@ -143,25 +151,25 @@ ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) 
 
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size(88, 48),
+        minimumSize: const Size.fromHeight(48),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
       ),
     ),
 
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(88, 48),
+        minimumSize: const Size.fromHeight(48),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        side: BorderSide(color: colorScheme.outline, width: 1.5),
+        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
+        side: BorderSide(color: colorScheme.outlineVariant, width: 1),
       ),
     ),
 
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         minimumSize: const Size(88, 40),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
       ),
     ),
 
@@ -171,31 +179,37 @@ ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) 
       elevation: AppDesignTokens.fallback.cardElevation,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        side: BorderSide(color: colorScheme.outlineVariant, width: 1),
-        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colorScheme.outlineVariant,
+          width: AppBorders.borderWidthHairline,
+        ),
+        borderRadius: AppBorders.cardRadius,
       ),
-      color: colorScheme.surfaceContainerLow,
+      color: colorScheme.surfaceContainerLowest,
     ),
 
     // Input Decoration Theme
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      fillColor: colorScheme.surfaceContainerLowest,
+      contentPadding: AppSpacing.inputPadding,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        
-        borderSide: BorderSide(color: colorScheme.outline),
+        borderRadius: AppBorders.inputRadius,
+        borderSide: BorderSide(color: colorScheme.outlineVariant),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.outline),
+        borderRadius: AppBorders.inputRadius,
+        borderSide: BorderSide(color: colorScheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.primary, width: 2),
+        borderRadius: AppBorders.inputRadius,
+        borderSide: BorderSide(
+          color: colorScheme.primary,
+          width: AppBorders.borderWidthActive,
+        ),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppBorders.inputRadius,
         borderSide: BorderSide(color: colorScheme.error),
       ),
       floatingLabelStyle: TextStyle(color: colorScheme.primary),
@@ -299,13 +313,13 @@ ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) 
     ),
 
     // Bottom Sheet Theme
-    bottomSheetTheme: const BottomSheetThemeData(
+    bottomSheetTheme: BottomSheetThemeData(
       showDragHandle: true,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(28),
-        ),
+      backgroundColor: colorScheme.surfaceContainerLowest,
+      modalBackgroundColor: colorScheme.surfaceContainerLowest,
+      shape: const RoundedRectangleBorder(
+        borderRadius: AppBorders.bottomSheetRadius,
       ),
     ),
 
@@ -345,22 +359,25 @@ ThemeData _buildTheme(ColorScheme colorScheme, AppColorsExtension customColors) 
   );
 }
 
-ThemeData buildLightTheme({required String primaryColorHex}) {
-  final seed = _colorFromHex(primaryColorHex.isNotEmpty ? primaryColorHex : '#6750A4');
-  final colorScheme = ColorScheme.fromSeed(
-    seedColor: seed,
-    brightness: Brightness.light,
-  );
-  return _buildTheme(colorScheme, AppPalettes.light);
+/// Builds the Zameel light theme from the fixed marketplace [ColorScheme].
+///
+/// [primaryColorHex] is an optional override for white-labelling; when omitted
+/// the fixed academic-navy primary from [ZameelColorSchemes] is used.
+ThemeData buildLightTheme({String? primaryColorHex}) {
+  var colorScheme = ZameelColorSchemes.lightColorScheme;
+  if (primaryColorHex != null && primaryColorHex.isNotEmpty) {
+    colorScheme = colorScheme.copyWith(primary: _colorFromHex(primaryColorHex));
+  }
+  return _buildTheme(colorScheme, AppPalettes.light, ZameelStatusColors.light);
 }
 
-ThemeData buildDarkTheme({required String primaryColorHex}) {
-  final seed = _colorFromHex(primaryColorHex.isNotEmpty ? primaryColorHex : '#6750A4');
-  final colorScheme = ColorScheme.fromSeed(
-    seedColor: seed,
-    brightness: Brightness.dark,
-  );
-  return _buildTheme(colorScheme, AppPalettes.dark);
+/// Builds the Zameel dark theme from the fixed marketplace [ColorScheme].
+ThemeData buildDarkTheme({String? primaryColorHex}) {
+  var colorScheme = ZameelColorSchemes.darkColorScheme;
+  if (primaryColorHex != null && primaryColorHex.isNotEmpty) {
+    colorScheme = colorScheme.copyWith(primary: _colorFromHex(primaryColorHex));
+  }
+  return _buildTheme(colorScheme, AppPalettes.dark, ZameelStatusColors.dark);
 }
 
 CupertinoThemeData buildCupertinoTheme({required String primaryColorHex}) {

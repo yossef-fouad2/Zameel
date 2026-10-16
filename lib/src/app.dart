@@ -11,10 +11,10 @@ class App extends StatelessWidget {
 
   Widget _buildMaterialApp(BuildContext context) {
     return MaterialApp.router(
-      title: 'nex_fit',
+      title: 'Zameel',
       debugShowCheckedModeBanner: false,
-      theme: buildLightTheme(primaryColorHex: '#FFFFFF'),
-      darkTheme: buildDarkTheme(primaryColorHex: '#FFFFFF'),
+      theme: buildLightTheme(),
+      darkTheme: buildDarkTheme(),
       themeMode: ThemeMode.system,
       routerConfig: appRouter,
       localizationsDelegates: context.localizationDelegates,

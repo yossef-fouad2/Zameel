@@ -33,7 +33,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       (user) {
         emit(state.copyWith(isLoading: false));
         if (event.context.mounted) {
-          event.context.go(AppRoutes.home);
+          event.context.go(
+            user.role == UserRole.landlord
+                ? AppRoutes.home
+                : AppRoutes.studentOnboarding,
+          );
         }
       },
     );
@@ -61,7 +65,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       (user) {
         emit(state.copyWith(isLoading: false));
         if (event.context.mounted) {
-          event.context.go(AppRoutes.home);
+          event.context.go(
+            event.role == UserRole.landlord
+                ? AppRoutes.home
+                : AppRoutes.studentOnboarding,
+          );
         }
       },
     );

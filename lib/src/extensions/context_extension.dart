@@ -17,6 +17,11 @@ extension ContextExtension on BuildContext {
   AppColorsExtension get appColors =>
       theme.extension<AppColorsExtension>() ?? (isDarkMode ? AppPalettes.dark : AppPalettes.light);
 
+  /// Marketplace status colors (bed availability, booking states, no-data).
+  ZameelStatusColors get statusColors =>
+      theme.extension<ZameelStatusColors>() ??
+      (isDarkMode ? ZameelStatusColors.dark : ZameelStatusColors.light);
+
   /// Design tokens (spacing, border radii, elevation defaults).
   AppDesignTokens get designTokens =>
       theme.extension<AppDesignTokens>() ?? AppDesignTokens.fallback;

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 /// Named spacing constants aligned with an 8-pt grid.
@@ -50,6 +51,41 @@ abstract final class AppSpacing {
 
   /// 64 pt — maximum, full-bleed header heights.
   static double get xxxl => _xxxl.r;
+
+  // ── Static 8-pt grid (non-scaling; used by theme builders) ───────────────
+  static const double space2 = 2;
+  static const double space4 = 4;
+  static const double space8 = 8;
+  static const double space12 = 12;
+  static const double space16 = 16;
+  static const double space20 = 20;
+  static const double space24 = 24;
+  static const double space32 = 32;
+  static const double space40 = 40;
+  static const double space48 = 48;
+  static const double space56 = 56;
+  static const double space64 = 64;
+
+  /// Standard screen horizontal gutter (16 pt each side).
+  static const EdgeInsets pageGutter =
+      EdgeInsets.symmetric(horizontal: space16);
+
+  /// Inner padding for cards (16 pt all sides).
+  static const EdgeInsets cardInsets = EdgeInsets.all(space16);
+
+  /// Compact card padding (12 pt all sides).
+  static const EdgeInsets cardPaddingCompact = EdgeInsets.all(space12);
+
+  /// Dialog content padding (24 pt all sides).
+  static const EdgeInsets dialogPadding = EdgeInsets.all(space24);
+
+  /// Bottom-sheet content padding.
+  static const EdgeInsets bottomSheetPadding =
+      EdgeInsets.fromLTRB(space20, space12, space20, space32);
+
+  /// Input field content padding.
+  static const EdgeInsets inputPadding =
+      EdgeInsets.symmetric(horizontal: space16, vertical: space12);
 
   // ── Semantic aliases ──────────────────────────────────────────────────────
 

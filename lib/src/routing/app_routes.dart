@@ -8,7 +8,12 @@ abstract final class AppRoutes {
   static const String splash = '/splash';
   static const String home = '/';
   static const String onboarding = '/onboarding';
+  static const String roleSelection = '/role-selection';
   static const String login = '/login';
   static const String signup = '/signup';
   static const String forgotPassword = '/forgot-password';
+  static const String studentAuth = '/auth/student';
+  static const String studentOnboarding = '/student/onboarding';
+  static const String lifestyleQuiz = '/student/lifestyle-quiz';
+  static const String discovery = '/student/discovery';
 }

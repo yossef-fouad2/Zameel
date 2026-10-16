@@ -51,6 +51,8 @@ Thumbs.db
 
 # Project files
 dbSchema
+MILESTONES.md
+stitch_student_housing_marketplace_app
 
 # Logs
 *.log

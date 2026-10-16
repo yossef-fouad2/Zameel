@@ -70,4 +70,24 @@ abstract final class AppShadows {
       offset: Offset(0, 4),
     ),
   ];
+
+  // ── Zameel marketplace shadows (slate-tinted ambient) ─────────────────────
+
+  /// Floating bar — bottom CTA bar, map floating toggles (lifts upward).
+  static const List<BoxShadow> floating = [
+    BoxShadow(
+      color: Color(0x140F172A),
+      blurRadius: 16,
+      offset: Offset(0, -4),
+    ),
+  ];
+
+  /// Dialog / overlay depth.
+  static const List<BoxShadow> dialog = [
+    BoxShadow(
+      color: Color(0x280F172A),
+      blurRadius: 24,
+      offset: Offset(0, 8),
+    ),
+  ];
 }
