@@ -1,122 +1,102 @@
-# Design system — nex_fit
+# Zameel Design System
 
-This file documents the design conventions established at generation time. Consult it before changing UI code.
+## Source And Scope
 
----
+The current app follows the slate/amber/mint **Kinship Student Living** export under `stitch_student_housing_marketplace_app/stitch_student_housing_marketplace_app (1)/stitch_student_housing_marketplace_app`. Its `code.html` files and design guide provide the visual reference. The separate navy handoff palette is not active. Product branding in the app is Zameel.
 
-## Theme overview
+Preserve the visual hierarchy, but never copy fabricated listing inventory, verification claims, match counts, or compatibility scores from mockups. Unimplemented providers/features should be hidden or explicitly unavailable, not successful-looking buttons. Decorative previews must be labeled as illustrations, not live results. Screens use icon illustrations rather than claiming to reproduce the export's photography pixel for pixel.
 
-- **Preset:** `material3`
-- **Material 3:** Primary app chrome uses Material 3 theming in `lib/src/theme/theme.dart`.
-- **Dark mode:** Light and dark themes are supported; app can follow system brightness. Use semantic colors — do not branch on brightness in widgets for basic surfaces.
-- **Customization:** Global `ThemeData` lives in `lib/src/theme/theme.dart` — avoid one-off `ThemeData` overrides in feature widgets.
+## Theme And Colors
 
-- **Seed color:** `#FFFFFF` (used to derive `ColorScheme` via `ColorScheme.fromSeed` where applicable).
+Use `package:zameel/src/imports/imports.dart`, or the existing `core_imports.dart` / `packages_imports.dart` pair. The theme is initialized once in `App`:
 
----
+```dart
+theme: buildLightTheme(locale: context.locale),
+darkTheme: buildDarkTheme(locale: context.locale),
+themeMode: ThemeMode.system,
+```
 
-## Color system
+`ZameelColorSchemes` contains fixed Material 3 palettes in `lib/src/theme/color_schemes.dart`. Do not pass a seed color or build a new `ThemeData` per page.
 
-- Use `context.colors` (`ColorScheme`) for standard Material roles: `primary`, `onPrimary`, `secondary`, `surface`, `onSurface`, `error`, etc.
-- Use `context.appColors` for semantic extensions: `success`, `warning`, `info`, and their `on*` / container variants (see `lib/src/theme/color_schemes.dart`).
-- Definitions: `lib/src/theme/color_schemes.dart`, applied through `lib/src/theme/theme.dart`.
-- **Do not** hardcode hex colors in widgets — use theme roles or `appColors`.
+| Access | Purpose |
+|---|---|
+| `context.colors` | Standard Material roles; light primary `#091426`, primary container `#1E293B`, amber secondary container `#FE932C`, deep-green tertiary container `#00301F` |
+| `context.textTheme` / `context.typography` | Typography roles |
+| `context.appColors` | Generic success/warning/info and their container/foreground pairs |
+| `context.statusColors` | Availability, booking and no-data fill/text/border triples |
+| `context.designTokens` | Small fallback padding/radius/elevation extension |
 
----
+Pair foregrounds with the actual background: `onPrimaryContainer` on `primaryContainer`, `onSurface` on surfaces, and semantic text on its semantic fill. Do not use `onPrimary` for a primary-container panel, especially in dark mode. Light success text was darkened to `#087443` to retain contrast on pale surfaces. Dark colors are an app-defined counterpart because the reference screens specify light values only.
 
 ## Typography
 
-- Use `context.textTheme` (alias `context.typography`) for all text styles.
-- Roles follow Material 3: `display*`, `headline*`, `title*`, `body*`, `label*`.
-- No custom fonts uploaded — platform default typography (Roboto / SF Pro) via Material/Cupertino theme.
+- English: bundled **Plus Jakarta Sans**, variable weights 200-800.
+- Arabic: bundled **IBM Plex Sans Arabic**, weights 400/500/600/700, with increased line height and zero letter spacing.
+- Each family falls back to the other for mixed-language content. `AppFonts` and `buildTextTheme(locale: ...)` live in `text_theme.dart`.
+- `displayLarge` / `displayMedium` provide 36/28 hero sizes; headline roles use 30/24/20; body roles use 16/14/12. Use the closest role, then only necessary `copyWith` adjustments.
+- Fonts and OFL notices are in `assets/fonts/`, sourced from the pinned official Google Fonts commit documented in `pubspec.yaml`. No network font package is used.
+- Text already uses logical sizes and the platform text scaler. Do not apply `.sp` again to an existing themed `fontSize` or scale away the user's accessibility setting.
 
----
+## Responsive Layout
 
-## Spacing, borders, motion
+`ScreenUtilWrapper` is initialized once above the Material app. Its implemented baseline is **360 x 690**, not the old scaffold documentation's 390 x 844.
 
-Import tokens via `package:nex_fit/src/theme/theme_constants.dart`.
+| Token | Correct use |
+|---|---|
+| `AppSpacing.xxs` through `xxxl` | Responsive getters; already `.r` scaled. Use bare values. |
+| `AppSpacing.pagePadding`, `cardPadding`, `itemGap`, `formFieldGap` | Responsive double aliases. |
+| `AppSpacing.space2` through `space64` | Unscaled logical constants, useful for theme definitions. |
+| `pageGutter`, `cardInsets`, `inputPadding`, `dialogPadding`, `bottomSheetPadding` | Unscaled `EdgeInsets` presets for theme/layout use. |
+| `.w`, `.h`, `.r`, `.sp` on raw numbers | Only when a raw dimension really needs ScreenUtil scaling. |
 
-| Token class | Purpose |
-|-------------|---------|
-| `AppSpacing` | Padding, gaps (`xxs` … `xxxl`, plus `pagePadding`, `itemGap`, `cardPadding`) |
-| `AppBorders` | Border radii (`xs` … `xl`, `button`, `card`, `input`, `dialog`, …) |
-| `AppShadows` | Elevation shadows (`none`, `subtle`, `card`, `elevated`, `modal`) |
-| `AppDurations` | Animation durations (`fast`, `normal`, `medium`, `slow`, …) |
-| `AppCurves` | Standard curves (`standard`, `emphasized`, `pageEnter`, …) |
+Never use `AppSpacing.md.w` or `AppSpacing.lg.h`: those scale twice. Avoid fixed content heights where translated/scaled text must grow. Use bounded preview geometry, scrollable forms, `Flexible`/`Expanded` for bounded rows, `Wrap` for multiple labels, and `EdgeInsetsDirectional`/`PositionedDirectional` for RTL. A `Stack` containing only positioned children requires finite height and width. Use a max-width constraint for centered forms on wide screens, not an additional ScreenUtil initialization.
 
-**Rules**
+## Shape And Motion
 
-- Do not use magic numbers for padding — use `AppSpacing`.
-- Do not use inline `BorderRadius.circular(n)` — use `AppBorders`.
-- Prefer Material 3 tonal elevation on `Card` / `Surface` — custom shadows only via `AppShadows`.
+| Class | Purpose |
+|---|---|
+| `AppBorders` | Semantic radii: button/input 8, card 12, badge 6, dialog 16, bottom-sheet top 20; semantic aliases and `*Radius` members agree. |
+| `AppShadows` | Shared subtle/card/elevated/modal and floating/dialog effects; prefer tonal elevation where possible. |
+| `AppDurations` | Shared interaction/transition timing. |
+| `AppCurves` | Shared animation easing. |
 
----
+Do not invent new global radius or spacing names for one screen. Keep component-specific numeric geometry local when it has no reusable semantic meaning.
 
-## Responsive scaling (ScreenUtil)
+## Reusable Components
 
-- `ScreenUtilInit` is already applied in the app wrapper — do not add another.
-- Design size baseline: **390×844** (iPhone 14 class).
-- In templates and new code, use the `res` convention: widths `.w`, heights `.h`, radius `.r`, font sizes `.sp` when ScreenUtil is enabled.
-- ScreenUtil values are runtime — avoid `const` widgets that depend on `.w` / `.sp`.
+- `AppButton`: theme typography, independent background/foreground overrides, wrapping label, minimum touch height instead of clipped fixed text height.
+- `AppCard`, `AppTextField`: use the global card/input theme; cards use the lowest surface and fields use a low surface for tonal separation.
+- `AppTopBar`: accessible directional Back only when the router can pop or a custom action exists. Root screens must not navigate to another role's home on Back.
+- `StatusBadge`: use a truthful domain state, localized label, icon and semantic colors together. It expands for longer/scaled text.
+- `KinshipBrandMark`, `KinshipPill`: reuse the design's branding treatment/chips without hardcoded unlocalized campus text or fake verification badges.
+- `AuthFeedback`: UI listener for auth failures/success feedback. Blocs do not receive `BuildContext`, show toasts, or navigate.
 
----
+## New Page Pattern
 
-## Context extensions
+```dart
+import 'package:zameel/src/imports/imports.dart';
 
-Defined in `lib/src/extensions/context_extension.dart`:
+class ExamplePage extends StatelessWidget {
+  const ExamplePage({super.key});
 
-| Member | Use |
-|--------|-----|
-| `context.colors` | `ColorScheme` |
-| `context.textTheme` / `context.typography` | Text styles |
-| `context.appColors` | Semantic success/warning/info |
-| `context.designTokens` | Theme extension tokens |
-| `context.isDarkMode` | Brightness check |
-| `context.width` / `context.height` | Screen size |
-| `context.showAppDialog` | Dialog helper |
-| `context.showTypedSnackBar` | Status snackbars |
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppTopBar(title: 'feature.title'.tr()),
+    body: SafeArea(
+      child: ListView(
+        padding: EdgeInsets.all(AppSpacing.pagePadding),
+        children: [
+          AppCard(child: Text('feature.body'.tr(),
+            style: context.textTheme.bodyMedium)),
+        ],
+      ),
+    ),
+  );
+}
+```
 
-Prefer these shortcuts over repeating `Theme.of(context)` in widgets.
+The `feature.*` keys above are examples, not existing translations. Register real routes only in `app_router.dart`, add keys to both JSON locales, and keep backend calls in services/repositories. Router redirects enforce session/role access; database RLS is the security boundary.
 
----
+## Validation
 
-## Component conventions
-
-- Reusable widgets belong in `lib/src/shared/widgets/`.
-- Default style parameters to theme values, not hardcoded colors.
-- Widget file names match the widget class (`primary_button.dart` → `PrimaryButton`).
-- Do not read theme inside `const` constructors.
-
-### Dark mode checklist
-
-- No raw `Colors.white` / `Colors.black` for surfaces — use `colorScheme` roles.
-- Verify new screens in both light and dark theme.
-
----
-
-## Localization
-
-- User-visible strings use `easy_localization` — files in `assets/translations/`.
-- Do not hardcode display strings in widgets.
-- Add keys to JSON translation files, then run the generate command in **SETUP.md**.
-- Use interpolation in JSON — do not concatenate translated strings in Dart.
-
----
-
-## Do / Don't
-
-**Do**
-
-- `context.colors` / `context.appColors` for color
-- `context.textTheme` for typography
-- `AppSpacing`, `AppBorders`, `AppShadows`, `AppDurations`, `AppCurves` for layout and motion
-- `showAppDialog` and shared widgets for consistent UX
-
-**Don't**
-
-- Hardcode hex colors or arbitrary font families in widgets
-- Magic padding/radius numbers
-- Duplicate theme definitions per screen
-- Bypass design tokens for one-off “quick” UI
-
-For agent workflows and architecture boundaries, see **[AGENTS.md](AGENTS.md)**.
+Run `flutter analyze` and `flutter test` after changes. Theme tests load the bundled font assets and check contrast, font weights, tokens, both themes, and English/Arabic scaling. Auth/onboarding widget tests exercise actual routes and constrained layouts. Device smoke tests and final comparison with the design remain necessary before claiming production visual parity.

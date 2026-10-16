@@ -21,47 +21,42 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    
-    // Check if we can pop
-    final bool canPop = context.canPop();
+    final router = GoRouter.maybeOf(context);
+    final navigator = Navigator.maybeOf(context);
+    final canPop =
+        (router?.canPop() ?? false) || (navigator?.canPop() ?? false);
 
     void handleBack() {
       if (onPressed != null) {
         onPressed!();
-      } else if (canPop) {
-        context.pop();
-      } else {
-        context.go(AppRoutes.home);
+      } else if (router?.canPop() ?? false) {
+        router!.pop();
+      } else if (navigator?.canPop() ?? false) {
+        navigator!.maybePop();
       }
     }
 
     return AppBar(
       centerTitle: centerTitle,
+      automaticallyImplyLeading: false,
       elevation: 0,
       backgroundColor: isTransparent ? Colors.transparent : null,
       shadowColor: Colors.transparent,
       title: titleWidget ??
           Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: theme.appBarTheme.titleTextStyle?.copyWith(
-              fontWeight: FontWeight.w600,
-            ) ?? theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+                  fontWeight: FontWeight.w600,
+                ) ??
+                theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
           ),
-      leadingWidth: 40.w,
-      leading: GestureDetector(
-        onTap: handleBack,
-        child: ColoredBox(
-          color: Colors.transparent,
-          child: 
-              HugeIcon(
-                icon: HugeIcons.strokeRoundedArrowLeft01,
-                size: 24.sp,
-              )
-,
-        ),
-      ),
+      leading: onPressed != null || canPop
+          ? BackButton(onPressed: handleBack)
+          : null,
       iconTheme: theme.appBarTheme.iconTheme,
       actions: actions ?? [],
     );

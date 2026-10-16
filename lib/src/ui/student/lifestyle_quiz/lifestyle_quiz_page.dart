@@ -2,6 +2,7 @@ import 'package:zameel/src/imports/core_imports.dart';
 import 'package:zameel/src/imports/packages_imports.dart';
 import 'package:zameel/src/data/models/lifestyle_preferences.dart';
 import 'package:zameel/src/data/repositories/lifestyle_preferences_repository.dart';
+import 'package:zameel/src/ui/auth/bloc/session_bloc.dart';
 
 import 'lifestyle_quiz_bloc.dart';
 
@@ -34,117 +35,142 @@ class _LifestyleQuizView extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocConsumer<LifestyleQuizBloc, LifestyleQuizState>(
       listenWhen: (previous, current) {
-        final saveFinished = previous.isSaving && !current.isSaving;
-        return saveFinished ||
-            previous.errorMessage != current.errorMessage &&
-                current.errorMessage != null;
+        return previous.isSaving &&
+            !current.isSaving &&
+            current.errorMessage == null;
       },
       listener: (context, state) {
-        if (state.isSaving || state.errorMessage != null) {
-          if (state.errorMessage != null) {
-            showToast(
-              context,
-              message: _localizedMessage(state.errorMessage!),
-              status: 'error',
-            );
-          }
-          return;
-        }
-        context.go(AppRoutes.discovery);
+        context.read<SessionBloc>().add(const SessionCheckRequested());
+        context.goNamed('discovery');
       },
       builder: (context, state) {
-        if (state.loadStatus.isLoading) {
-          return const Scaffold(body: Center(child: AppLoading()));
-        }
-
         return Scaffold(
-          appBar: const AppTopBar(
+          appBar: AppTopBar(
             title: '',
             centerTitle: false,
-            titleWidget: KinshipBrandMark(compact: true),
+            titleWidget: const KinshipBrandMark(compact: true),
+            actions: [
+              IconButton(
+                tooltip: 'student_onboarding.profile'.tr(),
+                onPressed: state.isSaving
+                    ? null
+                    : () => context.push(AppRoutes.account),
+                icon: const Icon(Icons.account_circle_outlined),
+              ),
+            ],
           ),
           body: SafeArea(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.pagePadding,
-                AppSpacing.xs,
-                AppSpacing.pagePadding,
-                AppSpacing.xl,
-              ),
-              children: [
-                _QuizHeader(
-                  answeredCount: _answeredCount(state.preferences),
-                  isSaving: state.isSaving,
+            child: switch (state.loadStatus) {
+              AppStatus.initial || AppStatus.loading => Center(
+                  child: Semantics(
+                    label: 'student_quiz.loading'.tr(),
+                    child: const AppLoading(),
+                  ),
                 ),
-                SizedBox(height: AppSpacing.lg),
-                _PreviewScore(
-                  answeredCount: _answeredCount(state.preferences),
+              AppStatus.failure => SingleChildScrollView(
+                  child: AppEmptyState(
+                    icon: Icons.error_outline,
+                    title: 'student_quiz.load_error_title'.tr(),
+                    subtitle: 'student_quiz.load_error_body'.tr(),
+                    actionLabel: 'student_quiz.retry'.tr(),
+                    onAction: () => context
+                        .read<LifestyleQuizBloc>()
+                        .add(const LifestyleQuizStarted()),
+                  ),
                 ),
-                SizedBox(height: AppSpacing.lg),
-                for (final question in _quizQuestions) ...[
-                  _QuizQuestionCard(
-                    question: question,
-                    preferences: state.preferences,
-                    onSelected: (value) =>
-                        context.read<LifestyleQuizBloc>().add(
-                              LifestylePreferencesChanged(
-                                question.setValue(state.preferences, value),
+              _ => ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.pagePadding,
+                    AppSpacing.xs,
+                    AppSpacing.pagePadding,
+                    AppSpacing.xl,
+                  ),
+                  children: [
+                    _QuizHeader(
+                      answeredCount: _answeredCount(state.preferences),
+                      isSaving: state.isSaving,
+                    ),
+                    SizedBox(height: AppSpacing.lg),
+                    _AnswerProgress(
+                      answeredCount: _answeredCount(state.preferences),
+                    ),
+                    SizedBox(height: AppSpacing.lg),
+                    for (final question in _quizQuestions) ...[
+                      _QuizQuestionCard(
+                        question: question,
+                        preferences: state.preferences,
+                        onSelected: state.isSaving
+                            ? null
+                            : (value) => context.read<LifestyleQuizBloc>().add(
+                                  LifestylePreferencesChanged(
+                                    question.setValue(state.preferences, value),
+                                  ),
+                                ),
+                      ),
+                      SizedBox(height: AppSpacing.md),
+                    ],
+                    Container(
+                      padding: EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: context.colors.surfaceContainerHigh
+                            .withValues(alpha: .5),
+                        borderRadius: AppBorders.card,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.phone_android_outlined,
+                              color: context.colors.primary, size: 22.sp),
+                          SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              'student_quiz.privacy_notice'.tr(),
+                              style: context.textTheme.bodySmall?.copyWith(
+                                color: context.colors.onSurfaceVariant,
                               ),
                             ),
-                  ),
-                  SizedBox(height: AppSpacing.md),
-                ],
-                Container(
-                  padding: EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: context.colors.surfaceContainerHigh
-                        .withValues(alpha: .5),
-                    borderRadius: AppBorders.card,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.lock_open_outlined,
-                          color: context.colors.primary, size: 22.sp),
-                      SizedBox(width: AppSpacing.sm),
-                      Expanded(
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: AppSpacing.lg),
+                    if (state.errorMessage != null) ...[
+                      Semantics(
+                        liveRegion: true,
                         child: Text(
-                          'student_quiz.privacy_notice'.tr(),
-                          style: context.textTheme.bodySmall?.copyWith(
-                            color: context.colors.onSurfaceVariant,
-                            height: 1.4,
+                          _localizedMessage(state.errorMessage!),
+                          style: context.textTheme.bodyMedium?.copyWith(
+                            color: context.colors.error,
                           ),
                         ),
                       ),
+                      SizedBox(height: AppSpacing.sm),
                     ],
-                  ),
+                    AppButton(
+                      label: 'student_quiz.save'.tr(),
+                      onPressed: state.isSaving
+                          ? null
+                          : () => context
+                              .read<LifestyleQuizBloc>()
+                              .add(const LifestylePreferencesSaveRequested()),
+                      isLoading: state.isSaving,
+                      isFullWidth: true,
+                      height: ButtonSize.large,
+                      suffixIcon: const Icon(Icons.arrow_forward),
+                    ),
+                    SizedBox(height: AppSpacing.sm),
+                    TextButton(
+                      onPressed: state.isSaving
+                          ? null
+                          : () => context
+                              .read<LifestyleQuizBloc>()
+                              .add(const LifestylePreferencesSkipRequested()),
+                      child: Text('student_quiz.skip'.tr()),
+                    ),
+                  ],
                 ),
-                SizedBox(height: AppSpacing.lg),
-                AppButton(
-                  label: 'student_quiz.save'.tr(),
-                  onPressed: state.isSaving
-                      ? null
-                      : () => context
-                          .read<LifestyleQuizBloc>()
-                          .add(const LifestylePreferencesSaveRequested()),
-                  isLoading: state.isSaving,
-                  isFullWidth: true,
-                  height: ButtonSize.large,
-                  suffixIcon: const Icon(Icons.arrow_forward),
-                ),
-                SizedBox(height: AppSpacing.sm),
-                TextButton(
-                  onPressed: state.isSaving
-                      ? null
-                      : () => context
-                          .read<LifestyleQuizBloc>()
-                          .add(const LifestylePreferencesSkipRequested()),
-                  child: Text('student_quiz.skip'.tr()),
-                ),
-              ],
-            ),
+            },
           ),
-          bottomNavigationBar: const _QuizNavigationBar(),
         );
       },
     );
@@ -161,7 +187,9 @@ class _LifestyleQuizView extends StatelessWidget {
   }
 
   static String _localizedMessage(String message) {
-    return message.startsWith('student_quiz.') ? message.tr() : message;
+    return message.startsWith('student_quiz.')
+        ? message.tr()
+        : 'student_quiz.save_error'.tr();
   }
 }
 
@@ -177,8 +205,11 @@ class _QuizHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.xs,
           children: [
             KinshipPill(
               label: 'student_quiz.progress'.tr(),
@@ -186,18 +217,9 @@ class _QuizHeader extends StatelessWidget {
               backgroundColor: colors.tertiaryContainer,
               foregroundColor: colors.onTertiaryContainer,
             ),
-            Row(
-              children: [
-                Icon(Icons.verified_user_outlined,
-                    size: 15.sp, color: context.appColors.success),
-                SizedBox(width: AppSpacing.xs),
-                Text(
-                  'student_quiz.private_transparent'.tr(),
-                  style: context.textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
+            KinshipPill(
+              label: 'student_quiz.local_only'.tr(),
+              icon: Icons.phone_android_outlined,
             ),
           ],
         ),
@@ -205,7 +227,9 @@ class _QuizHeader extends StatelessWidget {
         ClipRRect(
           borderRadius: AppBorders.full,
           child: LinearProgressIndicator(
-            value: .75,
+            value: answeredCount / _quizQuestions.length,
+            semanticsLabel: 'student_quiz.answered_semantics'
+                .tr(args: ['$answeredCount', '${_quizQuestions.length}']),
             minHeight: 6.h,
             backgroundColor: colors.surfaceContainerHigh,
             color: colors.primary,
@@ -217,7 +241,6 @@ class _QuizHeader extends StatelessWidget {
           style: context.textTheme.headlineMedium?.copyWith(
             color: colors.onSurface,
             fontWeight: FontWeight.w800,
-            height: 1.2,
           ),
         ),
         SizedBox(height: AppSpacing.xs),
@@ -225,31 +248,28 @@ class _QuizHeader extends StatelessWidget {
           'student_quiz.subtitle'.tr(),
           style: context.textTheme.bodyMedium?.copyWith(
             color: colors.onSurfaceVariant,
-            height: 1.45,
           ),
         ),
         if (isSaving) ...[
           SizedBox(height: AppSpacing.sm),
-          Text(
-            'student_quiz.saving'.tr(),
-            style: context.textTheme.labelSmall?.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w700,
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              'student_quiz.saving'.tr(),
+              style: context.textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
-        Semantics(
-          label: 'student_quiz.answered_semantics'
-              .tr(args: ['$answeredCount', '5']),
-          child: const SizedBox.shrink(),
-        ),
       ],
     );
   }
 }
 
-class _PreviewScore extends StatelessWidget {
-  const _PreviewScore({required this.answeredCount});
+class _AnswerProgress extends StatelessWidget {
+  const _AnswerProgress({required this.answeredCount});
 
   final int answeredCount;
 
@@ -263,6 +283,7 @@ class _PreviewScore extends StatelessWidget {
         borderRadius: AppBorders.card,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 48.w,
@@ -279,42 +300,35 @@ class _PreviewScore extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Flexible(
-                      child: Text(
-                        'student_quiz.harmony_score'.tr(),
-                        style: context.textTheme.labelLarge?.copyWith(
-                          color: colors.onSurface,
-                          fontWeight: FontWeight.w800,
-                        ),
+                    Text(
+                      'student_quiz.answers_title'.tr(),
+                      style: context.textTheme.labelLarge?.copyWith(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    SizedBox(width: AppSpacing.xs),
                     KinshipPill(
-                      label: 'student_quiz.live_preview'.tr(),
-                      backgroundColor:
-                          context.appColors.success.withValues(alpha: .12),
-                      foregroundColor: context.appColors.success,
+                      label: 'student_quiz.answered_semantics'.tr(
+                        args: ['$answeredCount', '${_quizQuestions.length}'],
+                      ),
+                      backgroundColor: context.appColors.successContainer,
+                      foregroundColor: context.appColors.onSuccessContainer,
                     ),
                   ],
                 ),
                 SizedBox(height: AppSpacing.xxs),
                 Text(
-                  'student_quiz.harmony_body'.tr(),
+                  'student_quiz.answers_body'.tr(),
                   style: context.textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
                 ),
               ],
-            ),
-          ),
-          SizedBox(width: AppSpacing.sm),
-          Text(
-            '$answeredCount/5',
-            style: context.textTheme.titleLarge?.copyWith(
-              color: context.appColors.success,
-              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -332,7 +346,7 @@ class _QuizQuestionCard extends StatelessWidget {
 
   final _QuizQuestion question;
   final LifestylePreferences preferences;
-  final ValueChanged<Object> onSelected;
+  final ValueChanged<Object>? onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -362,7 +376,6 @@ class _QuizQuestionCard extends StatelessWidget {
                       question.category.tr(),
                       style: context.textTheme.labelSmall?.copyWith(
                         color: context.colors.onSurfaceVariant,
-                        letterSpacing: .7,
                       ),
                     ),
                     Text(
@@ -390,7 +403,8 @@ class _QuizQuestionCard extends StatelessWidget {
             _QuizOptionTile(
               option: option,
               selected: question.getValue(preferences) == option.value,
-              onTap: () => onSelected(option.value),
+              onTap:
+                  onSelected == null ? null : () => onSelected!(option.value),
             ),
             if (option != question.options.last)
               SizedBox(height: AppSpacing.sm),
@@ -410,19 +424,19 @@ class _QuizOptionTile extends StatelessWidget {
 
   final _QuizOption option;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final foreground = selected ? colors.onPrimary : colors.onSurface;
-    final secondary =
-        selected ? colors.onPrimaryContainer : colors.onSurfaceVariant;
+    final secondary = selected ? colors.onPrimary : colors.onSurfaceVariant;
 
     return Semantics(
       button: true,
-      selected: selected,
-      label: option.label.tr(),
+      checked: selected,
+      inMutuallyExclusiveGroup: true,
+      enabled: onTap != null,
       child: InkWell(
         onTap: onTap,
         borderRadius: AppBorders.input,
@@ -444,9 +458,7 @@ class _QuizOptionTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(option.icon,
-                  size: 21.sp,
-                  color: selected ? colors.secondaryContainer : secondary),
+              Icon(option.icon, size: 21.sp, color: secondary),
               SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
@@ -472,53 +484,12 @@ class _QuizOptionTile extends StatelessWidget {
               Icon(
                 selected ? Icons.check_circle : Icons.radio_button_unchecked,
                 size: 21.sp,
-                color: selected ? context.appColors.success : colors.outline,
+                color: selected ? colors.onPrimary : colors.outline,
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _QuizNavigationBar extends StatelessWidget {
-  const _QuizNavigationBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return NavigationBar(
-      selectedIndex: 2,
-      onDestinationSelected: (index) {
-        if (index == 2) return;
-        showToast(
-          context,
-          message: 'student_quiz.navigation_coming_soon'.tr(),
-          status: 'info',
-        );
-      },
-      destinations: [
-        NavigationDestination(
-          icon: const Icon(Icons.explore_outlined),
-          selectedIcon: const Icon(Icons.explore),
-          label: 'student_discovery.explore'.tr(),
-        ),
-        NavigationDestination(
-          icon: const Icon(Icons.task_alt_outlined),
-          selectedIcon: const Icon(Icons.task_alt),
-          label: 'student_discovery.requests'.tr(),
-        ),
-        NavigationDestination(
-          icon: const Icon(Icons.psychology_outlined),
-          selectedIcon: const Icon(Icons.psychology),
-          label: 'student_discovery.match_quiz'.tr(),
-        ),
-        NavigationDestination(
-          icon: const Icon(Icons.real_estate_agent_outlined),
-          selectedIcon: const Icon(Icons.real_estate_agent),
-          label: 'student_discovery.landlord'.tr(),
-        ),
-      ],
     );
   }
 }

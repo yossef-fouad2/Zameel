@@ -1,4 +1,9 @@
-import '../../imports/imports.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+
+import '../../extensions/context_extension.dart';
+import '../../theme/theme_constants.dart';
+import '../enums/button_enums.dart';
 
 /// A fully themed button supporting all [ButtonVariant]s and [ButtonSize]s.
 ///
@@ -8,7 +13,7 @@ import '../../imports/imports.dart';
 ///   label: 'Save',
 ///   onPressed: _save,
 ///   variant: ButtonVariant.primary,
-///   size: ButtonSize.large,
+///   height: ButtonSize.large,
 ///   isLoading: state.isLoading,
 /// )
 /// ```
@@ -43,70 +48,78 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = context.theme.colorScheme;
-    final appColors = context.theme.extension<AppColorsExtension>()!;
+    final appColors = context.appColors;
     final isDisabled = onPressed == null || isLoading;
 
-    final double buttonHeight = switch (height) {
-      ButtonSize.small  => 36.h,
-      ButtonSize.medium => 48.h,
-      ButtonSize.large  => 56.h,
+    final double minimumHeight = switch (height) {
+      ButtonSize.small || ButtonSize.medium => AppSpacing.space48,
+      ButtonSize.large => AppSpacing.space56,
     };
 
     final double? buttonWidth = switch (width) {
-      ButtonSize.small  => 100.w,
+      ButtonSize.small => 100.w,
       ButtonSize.medium => 150.w,
-      ButtonSize.large  => 200.w,
-      null              => null,
+      ButtonSize.large => 200.w,
+      null => null,
     };
 
     final double horizontalPadding = switch (height) {
-      ButtonSize.small  => 12.w,
+      ButtonSize.small => 12.w,
       ButtonSize.medium => 20.w,
-      ButtonSize.large  => 28.w,
+      ButtonSize.large => 28.w,
     };
 
-    final double fontSize = switch (height) {
-      ButtonSize.small  => 12.sp,
-      ButtonSize.medium => 14.sp,
-      ButtonSize.large  => 16.sp,
+    final textStyle = switch (height) {
+      ButtonSize.small => context.textTheme.labelMedium,
+      ButtonSize.medium => context.textTheme.labelLarge,
+      ButtonSize.large => context.textTheme.titleMedium,
     };
 
     final (bg, fg, border) = switch (variant) {
-      ButtonVariant.primary   => (color ?? cs.primary, color ?? cs.onPrimary, null),
-      ButtonVariant.secondary => (cs.secondaryContainer, cs.onSecondaryContainer, null),
-      ButtonVariant.outline   => (Colors.transparent, cs.primary, BorderSide(color: cs.outline, width: 1.5)),
-      ButtonVariant.ghost     => (Colors.transparent, cs.primary, null),
-      ButtonVariant.danger    => (cs.error, cs.onError, null),
-      ButtonVariant.success   => (appColors.success, appColors.onSuccess, null),
+      ButtonVariant.primary => (color ?? cs.primary, cs.onPrimary, null),
+      ButtonVariant.secondary => (
+          cs.secondaryContainer,
+          cs.onSecondaryContainer,
+          null
+        ),
+      ButtonVariant.outline => (
+          Colors.transparent,
+          cs.primary,
+          BorderSide(color: cs.outline, width: AppBorders.borderWidthActive)
+        ),
+      ButtonVariant.ghost => (Colors.transparent, cs.primary, null),
+      ButtonVariant.danger => (cs.error, cs.onError, null),
+      ButtonVariant.success => (appColors.success, appColors.onSuccess, null),
     };
+    final foreground = textColor ?? fg;
 
     final child = AnimatedSwitcher(
       duration: AppDurations.fast,
       switchInCurve: AppCurves.decelerate,
       child: isLoading
-          ? SizedBox(
+          ? SizedBox.square(
               key: const ValueKey('loader'),
-              width: 20.w,
-              height: 20.h,
+              dimension: AppSpacing.space20,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: fg,
+                color: foreground,
+                semanticsLabel: label,
               ),
             )
           : Row(
               key: const ValueKey('content'),
               mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (prefixIcon != null) ...[
                   prefixIcon!,
                   SizedBox(width: 8.w),
                 ],
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.w600,
-                    color: isDisabled ?  fg.withValues(alpha: 0.5) : textColor ?? fg,
+                Flexible(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    softWrap: true,
                   ),
                 ),
                 if (suffixIcon != null) ...[
@@ -122,13 +135,22 @@ class AppButton extends StatelessWidget {
       opacity: isDisabled ? 0.6 : 1.0,
       child: SizedBox(
         width: isFullWidth ? double.infinity : buttonWidth,
-        height: buttonHeight,
         child: TextButton(
           onPressed: isDisabled ? null : onPressed,
           style: TextButton.styleFrom(
             backgroundColor: bg,
-            foregroundColor: fg,
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            foregroundColor: foreground,
+            disabledBackgroundColor: bg,
+            disabledForegroundColor: foreground,
+            textStyle: textStyle,
+            // Height is a minimum so scaled or multi-line labels can grow.
+            minimumSize: Size(AppSpacing.space48, minimumHeight),
+            visualDensity: VisualDensity.standard,
+            tapTargetSize: MaterialTapTargetSize.padded,
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: AppSpacing.space12,
+            ),
             shape: border != null
                 ? RoundedRectangleBorder(
                     borderRadius: AppBorders.buttonRadius,

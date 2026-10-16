@@ -82,14 +82,6 @@ class LifestyleQuizBloc extends Bloc<LifestyleQuizEvent, LifestyleQuizState> {
     add(const LifestyleQuizStarted());
   }
 
-  static const LifestylePreferences designDefaults = LifestylePreferences(
-    sleepSchedule: SleepSchedule.average,
-    studyAtmosphere: StudyAtmosphere.ambient,
-    dishPolicy: DishPolicy.immediate,
-    guestPreference: GuestPreference.occasional,
-    roomSharingPreference: RoomSharingPreference.doubleRoom,
-  );
-
   final LifestylePreferencesRepository _repository;
   final String _userId;
 
@@ -97,21 +89,26 @@ class LifestyleQuizBloc extends Bloc<LifestyleQuizEvent, LifestyleQuizState> {
     LifestyleQuizStarted event,
     Emitter<LifestyleQuizState> emit,
   ) async {
+    if (state.isSaving ||
+        state.loadStatus == AppStatus.loading ||
+        state.loadStatus == AppStatus.success) {
+      return;
+    }
     emit(state.copyWith(loadStatus: AppStatus.loading, errorMessage: null));
 
     final result = await _repository.getPreferences(userId: _userId);
+    if (emit.isDone) return;
     result.fold(
       (failure) => emit(
         state.copyWith(
           loadStatus: AppStatus.failure,
-          preferences: designDefaults,
           errorMessage: failure.message,
         ),
       ),
       (saved) => emit(
         state.copyWith(
           loadStatus: AppStatus.success,
-          preferences: saved ?? designDefaults,
+          preferences: saved ?? const LifestylePreferences(),
           errorMessage: null,
         ),
       ),
@@ -122,6 +119,7 @@ class LifestyleQuizBloc extends Bloc<LifestyleQuizEvent, LifestyleQuizState> {
     LifestylePreferencesChanged event,
     Emitter<LifestyleQuizState> emit,
   ) {
+    if (state.loadStatus != AppStatus.success || state.isSaving) return;
     emit(
       state.copyWith(
         preferences: event.preferences.copyWith(
@@ -139,10 +137,10 @@ class LifestyleQuizBloc extends Bloc<LifestyleQuizEvent, LifestyleQuizState> {
     LifestylePreferencesSaveRequested event,
     Emitter<LifestyleQuizState> emit,
   ) async {
+    if (state.loadStatus != AppStatus.success || state.isSaving) return;
     if (!_hasAllAnswers(state.preferences)) {
       emit(
         state.copyWith(
-          loadStatus: AppStatus.failure,
           errorMessage: 'student_quiz.answer_all_required',
         ),
       );
@@ -161,11 +159,11 @@ class LifestyleQuizBloc extends Bloc<LifestyleQuizEvent, LifestyleQuizState> {
       userId: _userId,
       preferences: preferences,
     );
+    if (emit.isDone) return;
     result.fold(
       (failure) => emit(
         state.copyWith(
           isSaving: false,
-          loadStatus: AppStatus.failure,
           errorMessage: failure.message,
         ),
       ),
@@ -184,6 +182,7 @@ class LifestyleQuizBloc extends Bloc<LifestyleQuizEvent, LifestyleQuizState> {
     LifestylePreferencesSkipRequested event,
     Emitter<LifestyleQuizState> emit,
   ) async {
+    if (state.loadStatus != AppStatus.success || state.isSaving) return;
     final preferences = state.preferences.copyWith(
       isComplete: false,
       isSkipped: true,
@@ -196,11 +195,11 @@ class LifestyleQuizBloc extends Bloc<LifestyleQuizEvent, LifestyleQuizState> {
       userId: _userId,
       preferences: preferences,
     );
+    if (emit.isDone) return;
     result.fold(
       (failure) => emit(
         state.copyWith(
           isSaving: false,
-          loadStatus: AppStatus.failure,
           errorMessage: failure.message,
         ),
       ),

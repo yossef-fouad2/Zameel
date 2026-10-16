@@ -1,153 +1,165 @@
-﻿import 'package:zameel/src/imports/core_imports.dart';
-import 'package:zameel/src/imports/packages_imports.dart';
+import 'package:equatable/equatable.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:zameel/src/data/repositories/auth_repository.dart';
+import '../../../data/models/auth_result.dart';
+import '../../../data/models/user_role.dart';
+import '../../../data/repositories/auth_repository.dart';
+import '../../../utils/typedefs.dart';
 
-class AuthBloc extends Bloc<AuthEvent, AuthState> {
-  final AuthRepository _repository;
-
-  AuthBloc({required AuthRepository repository})
-      : _repository = repository,
-        super(const AuthState.initial()) {
-    on<LoginRequested>(_onLoginRequested);
-    on<SignUpRequested>(_onSignUpRequested);
-    on<ForgotPasswordRequested>(_onForgotPasswordRequested);
-  }
-
-  Future<void> _onLoginRequested(
-    LoginRequested event,
-    Emitter<AuthState> emit,
-  ) async {
-    emit(state.copyWith(isLoading: true));
-
-    final result =
-        await _repository.login(email: event.email, password: event.password);
-
-    result.fold(
-      (failure) {
-        emit(state.copyWith(isLoading: false));
-        if (event.context.mounted) {
-          showToast(event.context, message: failure.message, status: 'error');
-        }
-      },
-      (user) {
-        emit(state.copyWith(isLoading: false));
-        if (event.context.mounted) {
-          event.context.go(
-            user.role == UserRole.landlord
-                ? AppRoutes.home
-                : AppRoutes.studentOnboarding,
-          );
-        }
-      },
-    );
-  }
-
-  Future<void> _onSignUpRequested(
-    SignUpRequested event,
-    Emitter<AuthState> emit,
-  ) async {
-    emit(state.copyWith(isLoading: true));
-
-    final result = await _repository.signUp(
-        name: event.name,
-        email: event.email,
-        role: event.role,
-        password: event.password);
-
-    result.fold(
-      (failure) {
-        emit(state.copyWith(isLoading: false));
-        if (event.context.mounted) {
-          showToast(event.context, message: failure.message, status: 'error');
-        }
-      },
-      (user) {
-        emit(state.copyWith(isLoading: false));
-        if (event.context.mounted) {
-          event.context.go(
-            event.role == UserRole.landlord
-                ? AppRoutes.home
-                : AppRoutes.studentOnboarding,
-          );
-        }
-      },
-    );
-  }
-
-  Future<void> _onForgotPasswordRequested(
-    ForgotPasswordRequested event,
-    Emitter<AuthState> emit,
-  ) async {
-    emit(state.copyWith(isLoading: true));
-
-    final result = await _repository.forgotPassword(email: event.email);
-
-    result.fold(
-      (failure) {
-        emit(state.copyWith(isLoading: false));
-        if (event.context.mounted) {
-          showToast(event.context, message: failure.message, status: 'error');
-        }
-      },
-      (success) {
-        emit(state.copyWith(isLoading: false));
-        if (event.context.mounted) {
-          showToast(event.context,
-              message: 'Password reset link sent successfully',
-              status: 'success');
-        }
-        if (event.context.mounted) {
-          event.context.go(AppRoutes.login);
-        }
-      },
-    );
-  }
+enum AuthStatus {
+  initial,
+  loading,
+  authenticated,
+  confirmationRequired,
+  recoveryEmailSent,
+  codeResent,
+  recoveryVerified,
+  passwordUpdated,
+  failure,
 }
 
-abstract class AuthEvent extends Equatable {
-  const AuthEvent();
+class AuthState extends Equatable {
+  const AuthState({
+    this.status = AuthStatus.initial,
+    this.email = '',
+    this.role = UserRole.student,
+    this.errorMessage,
+  });
+
+  final AuthStatus status;
+  final String email;
+  final UserRole role;
+  final String? errorMessage;
+  bool get isLoading => status == AuthStatus.loading;
+
   @override
-  List<Object> get props => [];
+  List<Object?> get props => [status, email, role, errorMessage];
+}
+
+sealed class AuthEvent {
+  const AuthEvent();
 }
 
 class LoginRequested extends AuthEvent {
-  final BuildContext context;
+  const LoginRequested({required this.email, required this.password});
   final String email;
   final String password;
-  const LoginRequested(
-      {required this.context, required this.email, required this.password});
 }
 
 class SignUpRequested extends AuthEvent {
-  final BuildContext context;
-  final String name;
-  final String email;
-  final String password;
-  final UserRole role;
   const SignUpRequested({
-    required this.context,
     required this.name,
     required this.email,
     required this.password,
     required this.role,
   });
+  final String name;
+  final String email;
+  final String password;
+  final UserRole role;
 }
 
 class ForgotPasswordRequested extends AuthEvent {
-  final BuildContext context;
+  const ForgotPasswordRequested({required this.email});
   final String email;
-  const ForgotPasswordRequested({required this.context, required this.email});
 }
 
-class AuthState extends Equatable {
-  final bool isLoading;
-  const AuthState({required this.isLoading});
-  const AuthState.initial() : isLoading = false;
-  AuthState copyWith({bool? isLoading}) {
-    return AuthState(isLoading: isLoading ?? this.isLoading);
+class AuthCodeSubmitted extends AuthEvent {
+  const AuthCodeSubmitted(
+      {required this.email, required this.code, this.recovery = false});
+  final String email;
+  final String code;
+  final bool recovery;
+}
+
+class AuthCodeResendRequested extends AuthEvent {
+  const AuthCodeResendRequested({required this.email, this.recovery = false});
+  final String email;
+  final bool recovery;
+}
+
+class PasswordUpdateRequested extends AuthEvent {
+  const PasswordUpdateRequested({required this.password});
+  final String password;
+}
+
+class AuthBloc extends Bloc<AuthEvent, AuthState> {
+  AuthBloc({required AuthRepository repository})
+      : _repository = repository,
+        super(const AuthState()) {
+    on<AuthEvent>(_onEvent);
   }
 
-  @override
-  List<Object?> get props => [isLoading];
+  final AuthRepository _repository;
+
+  Future<void> _onEvent(AuthEvent event, Emitter<AuthState> emit) async {
+    if (state.isLoading) return;
+    emit(const AuthState(status: AuthStatus.loading));
+
+    if (event is SignUpRequested) {
+      final result = await _repository.signUp(
+        name: event.name.trim(),
+        email: event.email.trim(),
+        password: event.password,
+        role: event.role,
+      );
+      result.fold(
+        (failure) => emit(AuthState(
+            status: AuthStatus.failure, errorMessage: failure.message)),
+        (outcome) => emit(AuthState(
+          status: outcome == SignUpOutcome.confirmationRequired
+              ? AuthStatus.confirmationRequired
+              : AuthStatus.authenticated,
+          email: event.email.trim(),
+          role: event.role,
+        )),
+      );
+      return;
+    }
+
+    final FutureEither<void> request;
+    final AuthStatus success;
+    String email = '';
+    switch (event) {
+      case LoginRequested():
+        email = event.email.trim();
+        request = _repository.login(email: email, password: event.password);
+        success = AuthStatus.authenticated;
+      case ForgotPasswordRequested():
+        email = event.email.trim();
+        request = _repository.forgotPassword(email: email);
+        success = AuthStatus.recoveryEmailSent;
+      case AuthCodeSubmitted():
+        email = event.email.trim();
+        request = event.recovery
+            ? _repository.verifyRecovery(email: email, code: event.code)
+            : _repository.confirmEmail(email: email, code: event.code);
+        success = event.recovery
+            ? AuthStatus.recoveryVerified
+            : AuthStatus.authenticated;
+      case AuthCodeResendRequested():
+        email = event.email.trim();
+        request = event.recovery
+            ? _repository.forgotPassword(email: email)
+            : _repository.resendConfirmation(email: email);
+        success = AuthStatus.codeResent;
+      case PasswordUpdateRequested():
+        request = _repository.updatePassword(password: event.password);
+        success = AuthStatus.passwordUpdated;
+      case SignUpRequested():
+        return;
+    }
+    final result = await request;
+    result.fold(
+      (failure) => emit(AuthState(
+        status: event is LoginRequested &&
+                failure.message == 'auth_flow.email_not_confirmed'
+            ? AuthStatus.confirmationRequired
+            : AuthStatus.failure,
+        email: email,
+        errorMessage: failure.message,
+      )),
+      (_) => emit(AuthState(status: success, email: email)),
+    );
+  }
 }

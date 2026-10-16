@@ -1,4 +1,8 @@
-import '../../imports/core_imports.dart';
+import 'package:flutter/material.dart';
+
+import '../../extensions/context_extension.dart';
+import '../../theme/theme_constants.dart';
+import '../enums/semantic_status.dart';
 
 /// A compact, accessible status pill for marketplace states.
 ///
@@ -50,10 +54,16 @@ class StatusBadge extends StatelessWidget {
     final colors = context.statusColors;
 
     final (fill, text, border) = switch (status) {
-      SemanticStatus.available =>
-        (colors.availableFill, colors.availableText, colors.availableBorder),
-      SemanticStatus.almostFull =>
-        (colors.almostFullFill, colors.almostFullText, colors.almostFullBorder),
+      SemanticStatus.available => (
+          colors.availableFill,
+          colors.availableText,
+          colors.availableBorder
+        ),
+      SemanticStatus.almostFull => (
+          colors.almostFullFill,
+          colors.almostFullText,
+          colors.almostFullBorder
+        ),
       SemanticStatus.fullyOccupied => (
           colors.fullyOccupiedFill,
           colors.fullyOccupiedText,
@@ -74,13 +84,19 @@ class StatusBadge extends StatelessWidget {
           colors.bookingRejectedText,
           colors.bookingRejectedBorder,
         ),
-      SemanticStatus.noData =>
-        (colors.noDataFill, colors.noDataText, colors.noDataBorder),
+      SemanticStatus.noData => (
+          colors.noDataFill,
+          colors.noDataText,
+          colors.noDataBorder
+        ),
     };
 
     return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.space8),
+      constraints: const BoxConstraints(minHeight: AppSpacing.space24),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.space8,
+        vertical: AppSpacing.space2,
+      ),
       decoration: BoxDecoration(
         color: fill,
         borderRadius: AppBorders.badgeRadius,
@@ -93,12 +109,11 @@ class StatusBadge extends StatelessWidget {
             Icon(icon ?? _defaultIcon, size: 14, color: text),
             const SizedBox(width: AppSpacing.space4),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: text,
+          Flexible(
+            child: Text(
+              label,
+              softWrap: true,
+              style: context.textTheme.labelMedium?.copyWith(color: text),
             ),
           ),
         ],

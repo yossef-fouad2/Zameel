@@ -11,8 +11,9 @@ class RoleSelectionPage extends HookWidget {
     final textTheme = context.textTheme;
 
     void continueWithRole() {
-      context.push(
-        '${AppRoutes.studentAuth}?role=${selectedRole.value.name}',
+      context.pushNamed(
+        'studentAuth',
+        queryParameters: {'role': selectedRole.value.name},
       );
     }
 
@@ -25,17 +26,16 @@ class RoleSelectionPage extends HookWidget {
             children: [
               _WelcomeHero(colors: colors, textTheme: textTheme),
               SizedBox(height: AppSpacing.lg),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                spacing: AppSpacing.md,
+                runSpacing: AppSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
-                    child: Text(
-                      'role_selection.choose_journey'.tr(),
-                      style: textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: colors.onSurface,
-                      ),
+                  Text(
+                    'role_selection.choose_journey'.tr(),
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: colors.onSurface,
                     ),
                   ),
                   KinshipPill(
@@ -65,7 +65,7 @@ class RoleSelectionPage extends HookWidget {
                 onPressed: continueWithRole,
                 isFullWidth: true,
                 height: ButtonSize.large,
-                suffixIcon: const Icon(Icons.arrow_forward),
+                suffixIcon: const Icon(Icons.arrow_forward_rounded),
               ),
               SizedBox(height: AppSpacing.sm),
               Center(
@@ -80,8 +80,8 @@ class RoleSelectionPage extends HookWidget {
                       ),
                     ),
                     TextButton(
-                      onPressed: () => context.push(AppRoutes.studentAuth),
-                      child: Text('auth.sign_in'.tr()),
+                      onPressed: () => context.pushNamed('studentAuth'),
+                      child: Text('role_selection.sign_in'.tr()),
                     ),
                   ],
                 ),
@@ -98,8 +98,8 @@ class RoleSelectionPage extends HookWidget {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.shield_outlined,
-                      color: context.appColors.success,
+                      Icons.info_outline,
+                      color: colors.onSurfaceVariant,
                       size: 18.sp,
                     ),
                     SizedBox(width: AppSpacing.sm),
@@ -109,7 +109,6 @@ class RoleSelectionPage extends HookWidget {
                         textAlign: TextAlign.center,
                         style: textTheme.labelSmall?.copyWith(
                           color: colors.onSurfaceVariant,
-                          height: 1.35,
                         ),
                       ),
                     ),
@@ -142,9 +141,9 @@ class _WelcomeHero extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned(
+          PositionedDirectional(
             top: -50.h,
-            right: -28.w,
+            end: -28.w,
             child: _GlowCircle(color: colors.secondary.withValues(alpha: .2)),
           ),
           Column(
@@ -158,7 +157,7 @@ class _WelcomeHero extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.diversity_3,
-                  color: colors.secondary,
+                  color: colors.onPrimary,
                   size: 30.sp,
                 ),
               ),
@@ -175,25 +174,34 @@ class _WelcomeHero extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: textTheme.bodyMedium?.copyWith(
                   color: colors.onPrimary.withValues(alpha: .82),
-                  height: 1.45,
                 ),
               ),
               SizedBox(height: AppSpacing.md),
               Container(
-                height: 128.h,
+                constraints: BoxConstraints(minHeight: 128.h),
+                padding: EdgeInsets.all(AppSpacing.md),
                 decoration: BoxDecoration(
                   color: colors.onPrimary.withValues(alpha: .08),
                   borderRadius: AppBorders.input,
                 ),
-                child: const Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                child: Center(
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: AppSpacing.lg,
+                    runSpacing: AppSpacing.md,
                     children: [
-                      _HeroIcon(icon: Icons.bedtime_outlined, label: '11 PM'),
-                      _HeroIcon(icon: Icons.groups_outlined, label: 'Shared'),
                       _HeroIcon(
-                          icon: Icons.verified_user_outlined,
-                          label: 'Verified'),
+                        icon: Icons.bedtime_outlined,
+                        label: 'role_selection.tag_sleep'.tr(),
+                      ),
+                      _HeroIcon(
+                        icon: Icons.groups_outlined,
+                        label: 'role_selection.hero_shared'.tr(),
+                      ),
+                      _HeroIcon(
+                        icon: Icons.home_outlined,
+                        label: 'role_selection.hero_housing'.tr(),
+                      ),
                     ],
                   ),
                 ),
@@ -202,14 +210,17 @@ class _WelcomeHero extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.verified,
-                      color: context.appColors.success, size: 16.sp),
+                  Icon(Icons.info_outline,
+                      color: colors.onPrimary, size: 16.sp),
                   SizedBox(width: AppSpacing.xs),
-                  Text(
-                    'role_selection.hero_badge'.tr(),
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.onPrimary,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: Text(
+                      'role_selection.hero_badge'.tr(),
+                      textAlign: TextAlign.center,
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.onPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -290,31 +301,14 @@ class _RoleOptionCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                isStudent
-                                    ? 'role_selection.student_title'.tr()
-                                    : 'role_selection.manager_title'.tr(),
-                                style: textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: colors.onSurface,
-                                ),
-                              ),
-                            ),
-                            if (isStudent) ...[
-                              SizedBox(width: AppSpacing.xs),
-                              KinshipPill(
-                                label: '.edu',
-                                icon: Icons.verified,
-                                backgroundColor:
-                                    context.appColors.successContainer,
-                                foregroundColor:
-                                    context.appColors.onSuccessContainer,
-                              ),
-                            ],
-                          ],
+                        Text(
+                          isStudent
+                              ? 'role_selection.student_title'.tr()
+                              : 'role_selection.manager_title'.tr(),
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: colors.onSurface,
+                          ),
                         ),
                         SizedBox(height: AppSpacing.xs),
                         Text(
@@ -340,7 +334,11 @@ class _RoleOptionCard extends StatelessWidget {
                     child: Icon(
                       Icons.check,
                       size: 16.sp,
-                      color: selected ? colors.onPrimary : colors.outline,
+                      color: selected
+                          ? (isStudent
+                              ? context.appColors.onSuccess
+                              : colors.onSecondary)
+                          : colors.outline,
                     ),
                   ),
                 ],
@@ -352,7 +350,6 @@ class _RoleOptionCard extends StatelessWidget {
                     : 'role_selection.manager_description'.tr(),
                 style: textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
-                  height: 1.4,
                 ),
               ),
               SizedBox(height: AppSpacing.sm),
@@ -367,8 +364,8 @@ class _RoleOptionCard extends StatelessWidget {
                           ]
                         : <String>[
                             'role_selection.tag_capacity'.tr(),
-                            'role_selection.tag_verified'.tr(),
-                            'role_selection.tag_radar'.tr(),
+                            'role_selection.tag_listings'.tr(),
+                            'role_selection.tag_requests'.tr(),
                           ])
                     .map(
                       (tag) => KinshipPill(
@@ -396,12 +393,14 @@ class _HeroIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: colors.secondary, size: 28.sp),
+        Icon(icon, color: colors.onPrimary, size: 28.sp),
         SizedBox(height: AppSpacing.xs),
         Text(
           label,
+          textAlign: TextAlign.center,
           style: context.textTheme.labelSmall?.copyWith(
             color: colors.onPrimary.withValues(alpha: .78),
           ),

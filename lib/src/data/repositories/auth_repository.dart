@@ -1,33 +1,27 @@
-﻿import 'package:zameel/src/utils/utils.dart';
-import 'package:zameel/src/data/models/user_model.dart';
-import 'package:zameel/src/data/models/user_role.dart';
+import '../models/auth_result.dart';
+import '../models/user_model.dart';
+import '../models/user_role.dart';
+import '../../utils/typedefs.dart';
 
 abstract class AuthRepository {
-  /// Stream of auth state changes. Emits AppUser when authenticated, null when not.
-  Stream<AppUser?> get onAuthStateChanged;
+  Stream<AuthSessionChange> get onAuthStateChanged;
 
-  /// Sign in with email and password
-  FutureEither<AppUser> login({
-    required String email,
-    required String password,
-  });
+  FutureEither<void> login({required String email, required String password});
 
-  /// Sign up with email, password, and optional name
-  FutureEither<AppUser> signUp({
+  FutureEither<SignUpOutcome> signUp({
     required String name,
     required String email,
     required String password,
     required UserRole role,
   });
 
-  /// Send a password reset email
-  FutureEither<void> forgotPassword({
-    required String email,
-  });
-
-  /// Sign out the current user
+  FutureEither<void> confirmEmail(
+      {required String email, required String code});
+  FutureEither<void> resendConfirmation({required String email});
+  FutureEither<void> forgotPassword({required String email});
+  FutureEither<void> verifyRecovery(
+      {required String email, required String code});
+  FutureEither<void> updatePassword({required String password});
   FutureEither<void> logout();
-
-  /// Check if the user is currently authenticated natively
   FutureEither<AppUser?> checkAuthState();
 }

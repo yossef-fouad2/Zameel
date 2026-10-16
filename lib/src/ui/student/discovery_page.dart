@@ -13,31 +13,28 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-
     return Scaffold(
       appBar: AppTopBar(
         title: 'student_discovery.title'.tr(),
         actions: [
           IconButton(
-            tooltip: 'student_discovery.notifications'.tr(),
-            onPressed: () => showToast(
-              context,
-              message: 'student_discovery.notifications_coming_soon'.tr(),
-              status: 'info',
-            ),
-            icon: const Icon(Icons.notifications_none_outlined),
+            tooltip: 'student_discovery.account'.tr(),
+            onPressed: () => context.push(AppRoutes.account),
+            icon: const Icon(Icons.account_circle_outlined),
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: const [
-          _ExploreTab(),
-          _RequestsTab(),
-          _MatchTab(),
-          _SavedTab(),
-        ],
+      body: SafeArea(
+        top: false,
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: const [
+            _ExploreTab(),
+            _RequestsTab(),
+            _MatchTab(),
+            _SavedTab(),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -67,19 +64,6 @@ class _StudentDiscoveryPageState extends State<StudentDiscoveryPage> {
           ),
         ],
       ),
-      floatingActionButton: _selectedIndex == 0
-          ? FloatingActionButton.extended(
-              onPressed: () => showToast(
-                context,
-                message: 'student_discovery.filters_coming_soon'.tr(),
-                status: 'info',
-              ),
-              icon: const Icon(Icons.tune),
-              label: Text('student_discovery.filters'.tr()),
-              backgroundColor: colors.secondaryContainer,
-              foregroundColor: colors.onSecondaryContainer,
-            )
-          : null,
     );
   }
 }
@@ -106,134 +90,38 @@ class _ExploreTab extends StatelessWidget {
           ),
         ),
         SizedBox(height: AppSpacing.lg),
-        const _ListingPreviewCard(
-          title: 'Quiet study home near campus',
-          location: '8 min walk to University Gate 3',
-          price: '1,250 / bed / month',
-          beds: '1 bed available',
-          match: 'Match preview available after quiz',
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: EdgeInsets.all(AppSpacing.xl),
+                decoration: BoxDecoration(
+                  color: context.colors.primaryContainer,
+                  borderRadius: AppBorders.input,
+                ),
+                child: Icon(
+                  Icons.home_work_outlined,
+                  size: 56.sp,
+                  color: context.colors.onPrimaryContainer,
+                ),
+              ),
+              SizedBox(height: AppSpacing.md),
+              Text(
+                'student_discovery.empty_explore'.tr(),
+                style: context.textTheme.titleLarge,
+              ),
+              SizedBox(height: AppSpacing.sm),
+              Text(
+                'student_discovery.empty_explore_body'.tr(),
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
-        SizedBox(height: AppSpacing.sm),
-        const _ListingPreviewCard(
-          title: 'Sunny rooms with shared kitchen',
-          location: '12 min walk to campus',
-          price: '980 / bed / month',
-          beds: '2 beds available',
-          match: 'Complete your profile for factors',
-        ),
-        SizedBox(height: 88.h),
       ],
-    );
-  }
-}
-
-class _ListingPreviewCard extends StatelessWidget {
-  const _ListingPreviewCard({
-    required this.title,
-    required this.location,
-    required this.price,
-    required this.beds,
-    required this.match,
-  });
-
-  final String title;
-  final String location;
-  final String price;
-  final String beds;
-  final String match;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 140.h,
-            decoration: BoxDecoration(
-              color: colors.primaryContainer,
-              borderRadius: BorderRadius.vertical(top: AppBorders.card.topLeft),
-            ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Icon(Icons.home_work_outlined,
-                      size: 56.sp,
-                      color: colors.onPrimary.withValues(alpha: .8)),
-                ),
-                Positioned(
-                  left: AppSpacing.sm,
-                  top: AppSpacing.sm,
-                  child: KinshipPill(
-                    label: beds,
-                    icon: Icons.bed_outlined,
-                    backgroundColor:
-                        colors.surfaceContainerLowest.withValues(alpha: .92),
-                    foregroundColor: context.appColors.success,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: context.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    )),
-                SizedBox(height: AppSpacing.xs),
-                Row(
-                  children: [
-                    Icon(Icons.location_on_outlined,
-                        size: 16.sp, color: colors.onSurfaceVariant),
-                    SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(location,
-                          style: context.textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          )),
-                    ),
-                  ],
-                ),
-                SizedBox(height: AppSpacing.sm),
-                Text(
-                  price,
-                  style: context.textTheme.titleMedium?.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: AppSpacing.sm),
-                Container(
-                  padding: EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerLow,
-                    borderRadius: AppBorders.input,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 16.sp, color: colors.onSurfaceVariant),
-                      SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(match,
-                            style: context.textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            )),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -243,10 +131,14 @@ class _RequestsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppEmptyState(
-      icon: HugeIcons.strokeRoundedTask01,
-      title: 'student_discovery.empty_requests'.tr(),
-      subtitle: 'student_discovery.empty_requests_body'.tr(),
+    return Center(
+      child: SingleChildScrollView(
+        child: AppEmptyState(
+          icon: Icons.task_alt_outlined,
+          title: 'student_discovery.empty_requests'.tr(),
+          subtitle: 'student_discovery.empty_requests_body'.tr(),
+        ),
+      ),
     );
   }
 }
@@ -257,7 +149,7 @@ class _MatchTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.all(AppSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -283,7 +175,8 @@ class _MatchTab extends StatelessWidget {
             SizedBox(height: AppSpacing.lg),
             AppButton(
               label: 'student_discovery.edit_quiz'.tr(),
-              onPressed: () => context.push(AppRoutes.lifestyleQuiz),
+              onPressed: () => context.pushNamed('lifestyleQuiz'),
+              isFullWidth: true,
               suffixIcon: const Icon(Icons.arrow_forward),
             ),
           ],
@@ -298,10 +191,14 @@ class _SavedTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppEmptyState(
-      icon: HugeIcons.strokeRoundedBookmark01,
-      title: 'student_discovery.empty_saved'.tr(),
-      subtitle: 'student_discovery.empty_saved_body'.tr(),
+    return Center(
+      child: SingleChildScrollView(
+        child: AppEmptyState(
+          icon: Icons.bookmark_border,
+          title: 'student_discovery.empty_saved'.tr(),
+          subtitle: 'student_discovery.empty_saved_body'.tr(),
+        ),
+      ),
     );
   }
 }

@@ -48,7 +48,7 @@ class AppCard extends StatelessWidget {
     final cs = context.theme.colorScheme;
     final tt = context.theme.textTheme;
 
-    final cardColor = color ?? cs.surfaceContainerLow;
+    final cardColor = color ?? cs.surfaceContainerLowest;
 
     final Widget content = Column(
       mainAxisSize: MainAxisSize.min,

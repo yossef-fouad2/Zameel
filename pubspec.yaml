@@ -78,6 +78,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  http: ^1.6.0 # SDK transport fakes in auth tests; no production HTTP layer.
 
   # Code Generation
 
@@ -91,4 +92,26 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/translations/
+    - assets/fonts/plus_jakarta_sans/OFL.txt
+    - assets/fonts/ibm_plex_sans_arabic/OFL.txt
     - .env
+
+  # Unmodified TTFs and OFL licenses from https://github.com/google/fonts
+  # at commit 1d0e46c7933245c8180fe83e47917961c913bbdb:
+  # ofl/plusjakartasans and ofl/ibmplexsansarabic. No runtime font downloads.
+  fonts:
+    - family: Plus Jakarta Sans
+      fonts:
+        # Source: PlusJakartaSans[wght].ttf, renamed without changing its bytes.
+        # Variable wght axis 200-800; do not pin this asset to one weight.
+        - asset: assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf
+    - family: IBM Plex Sans Arabic
+      fonts:
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/ibm_plex_sans_arabic/IBMPlexSansArabic-Bold.ttf
+          weight: 700

@@ -1,9 +1,11 @@
-# Reusable reference — nex_fit (package: `zameel`)
+# Zameel Reusable Reference
 
 Category-by-category guide to every reusable building block already in the skeleton.
 Consult this before writing new UI, helpers, or services — most things you need already exist.
 
 > Companion docs: **DESIGN.md** (design system), **AGENTS.md** (architecture rules), **SETUP.md** (platform/env).
+
+Current auth/design milestone update: the theme uses fixed Kinship-inspired light/dark palettes and bundled Plus Jakarta Sans / IBM Plex Sans Arabic. `buildLightTheme(locale: context.locale)` and `buildDarkTheme(locale: context.locale)` choose typography; there is no seed/primaryColorHex override. See DESIGN.md for the current sizing and accessibility rules.
 
 ---
 
@@ -35,6 +37,7 @@ Read these from `context` — never build a local `ThemeData` or hardcode hex.
 | `context.colors` | `ColorScheme` | **Primary color access** (`primary`, `onSurface`, `surface`, `error`, `onSurfaceVariant`, `outline`, `outlineVariant`, `secondaryContainer`, …) |
 | `context.textTheme` / `context.typography` | `TextTheme` | All text styles (`headlineMedium`, `bodyMedium`, `labelSmall`, …) |
 | `context.appColors` | `AppColorsExtension` | Semantic `success`, `warning`, `info` + `on*` and `*Container` variants |
+| `context.statusColors` | `ZameelStatusColors` | Marketplace availability/booking/no-data fill, text and border pairs |
 | `context.designTokens` | `AppDesignTokens` | Padding/radius/elevation fallback tokens |
 | `context.isDarkMode` | `bool` | Brightness branch (use sparingly) |
 | `context.width` / `context.height` / `context.screenSize` | `double` / `Size` | Screen size |
@@ -62,7 +65,7 @@ Icon(Icons.check, color: context.appColors.success);
 
 **Responsive convention**
 
-- `AppSpacing.*` returns an already-scaled value → use it **bare**: `SizedBox(height: AppSpacing.md)`. Do **not** append `.w`/`.h` (double-scales).
+- Named `AppSpacing` getters (e.g. `md`, `pagePadding`) are already scaled: use them bare. `space2` through `space64` and EdgeInsets presets are unscaled constants. Do not append `.w`/`.h` to an already-scaled getter.
 - Raw ScreenUtil units for everything else: `.w` (width), `.h` (height), `.r` (radius), `.sp` (font/icon).
 - `ScreenUtilInit` is applied once in `app.dart` (`ScreenUtilWrapper`, design size `360×690`) — never add another.
 - Avoid `const` widgets whose children depend on `.w/.sp/.r`.
@@ -153,9 +156,9 @@ AppTextField(
 ```
 
 ### `AppTopBar` (`app_top_bar.dart`) — `implements PreferredSizeWidget`
-Back-navigating app bar (auto `context.pop()`, falls back to `AppRoutes.home`).
+Back-navigating app bar: shows an accessible directional Back only when a router can pop or a custom back handler is supplied. No cross-role home fallback.
 ```dart
-AppBar: AppTopBar(
+appBar: AppTopBar(
   title: 'home.title'.tr(),
   titleWidget: null, actions: null,
   centerTitle: true, isTransparent: false, onPressed: null, // custom back handler
@@ -337,15 +340,19 @@ Convention: singletons via `ClassName.instance`, async methods return `FutureEit
 
 **`AuthService.instance`** (`auth_service.dart`) — Supabase auth.
 ```dart
-Stream<Map<String,dynamic>?> get authStateChanges;
-FutureEither<Map<String,dynamic>?> login({required String email, required String password});
-FutureEither<Map<String,dynamic>?> signUp({required String name, required String email,
+Stream<AuthSessionChange> get authStateChanges;
+FutureEither<void> login({required String email, required String password});
+FutureEither<SignUpOutcome> signUp({required String name, required String email,
     required String password, required UserRole role});
+FutureEither<void> confirmEmail({required String email, required String code});
+FutureEither<void> resendConfirmation({required String email});
 FutureEither<void> forgotPassword({required String email});
+FutureEither<void> verifyRecovery({required String email, required String code});
+FutureEither<void> updatePassword({required String password});
 FutureEither<void> logout();
-FutureEither<Map<String,dynamic>?> getCurrentUser();
+FutureEither<AppUser?> getCurrentUser();
 ```
-User map keys: `id, email, name, photoUrl, role`.
+`getCurrentUser` loads the current user's protected `profiles` row. Role/name are never authorized from user-editable metadata. `SignUpOutcome.confirmationRequired` is not an authenticated session. Use `AuthRepository` from blocs, `AuthFeedback` for UI feedback, and central router guards for access. No `BuildContext` is passed into auth events/services. See SETUP.md for OTP email templates and SQL prerequisites.
 
 **`StorageService.instance`** (`storage_service.dart`) — SharedPreferences. Call `await StorageService.instance.init()` once.
 Setters return `FutureEither<bool>`: `setString/setBool/setInt/setDouble/setStringList`.
@@ -410,7 +417,7 @@ Applied once in `main.dart` / `app.dart`; don't re-add.
 - `LocalizationWrapper` — `EasyLocalization` (locales `en`, `ar`, path `assets/translations`).
 - `StateWrapper` — provides `SessionBloc` + `AuthBloc` via `MultiBlocProvider`.
 - `ScreenUtilWrapper({designSize})` — `ScreenUtilInit` (default `360×690`).
-- `SessionListenerWrapper` — routes on session status change; removes native splash.
+- `SessionListenerWrapper` removes native splash and displays session-operation failures. `createAppRouter` and `sessionRedirect` own routing/guards; the router is created/disposed with `App`.
 - `SkeletonWrapper` — skeleton loading; useful locally too:
 ```dart
 SkeletonWrapper(isLoading: state.isLoading, child: Content())
@@ -430,7 +437,7 @@ AppAssets.appleIcon;
 
 ### Routing — `lib/src/routing/`
 - `AppRoutes` (`app_routes.dart`): `splash home onboarding login signup forgotPassword`. Never hardcode path strings.
-- `appRouter` (`app_router.dart`): the `GoRouter`. Register new routes here (declare in `AppRoutes` too).
+- `createAppRouter` (`app_router.dart`): creates the app-owned `GoRouter` with session/role/recovery guards. Register new routes here (declare in `AppRoutes` too).
 - `rootNavigatorKey` / `rootContext` (`global_navigator.dart`): context-free navigation/overlays for services.
 
 ```dart
@@ -453,7 +460,6 @@ class ProfilePage extends HookWidget {
   Widget build(BuildContext context) {
     final cs = context.colors;
     final tt = context.textTheme;
-    final isLoading = context.select((ProfileBloc b) => b.state.isLoading);
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -473,7 +479,6 @@ class ProfilePage extends HookWidget {
               AppButton(
                 label: 'common.save'.tr(),
                 isFullWidth: true,
-                isLoading: isLoading,
                 onPressed: () => showGlobalToast(message: 'common.saved'.tr()),
               ),
             ],

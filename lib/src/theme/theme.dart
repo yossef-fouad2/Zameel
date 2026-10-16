@@ -6,11 +6,6 @@ import 'color_schemes.dart';
 import 'app_spacing.dart';
 import 'app_borders.dart';
 
-Color _colorFromHex(String hex) {
-  final cleaned = hex.replaceFirst('#', '');
-  return Color(int.parse('ff$cleaned', radix: 16));
-}
-
 /// Custom theme extension for spacing and other design tokens
 class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   const AppDesignTokens({
@@ -72,9 +67,12 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       paddingSmall: lerpDouble(paddingSmall, other.paddingSmall, t)!,
       paddingMedium: lerpDouble(paddingMedium, other.paddingMedium, t)!,
       paddingLarge: lerpDouble(paddingLarge, other.paddingLarge, t)!,
-      borderRadiusSmall: lerpDouble(borderRadiusSmall, other.borderRadiusSmall, t)!,
-      borderRadiusMedium: lerpDouble(borderRadiusMedium, other.borderRadiusMedium, t)!,
-      borderRadiusLarge: lerpDouble(borderRadiusLarge, other.borderRadiusLarge, t)!,
+      borderRadiusSmall:
+          lerpDouble(borderRadiusSmall, other.borderRadiusSmall, t)!,
+      borderRadiusMedium:
+          lerpDouble(borderRadiusMedium, other.borderRadiusMedium, t)!,
+      borderRadiusLarge:
+          lerpDouble(borderRadiusLarge, other.borderRadiusLarge, t)!,
       cardElevation: lerpDouble(cardElevation, other.cardElevation, t)!,
     );
   }
@@ -91,20 +89,34 @@ ThemeData _buildTheme(
   ColorScheme colorScheme,
   AppColorsExtension customColors,
   ZameelStatusColors statusColors,
+  Locale locale,
 ) {
-  final textTheme = buildTextTheme();
-  
+  final textTheme = buildTextTheme(locale: locale).apply(
+    bodyColor: colorScheme.onSurface,
+    displayColor: colorScheme.onSurface,
+  );
+
   return ThemeData(
     useMaterial3: true,
     primaryColor: colorScheme.primary,
     colorScheme: colorScheme,
+    fontFamily: AppFonts.familyFor(locale),
+    fontFamilyFallback: AppFonts.fallbacksFor(locale),
     textTheme: textTheme,
+    primaryTextTheme: textTheme.apply(
+      bodyColor: colorScheme.onPrimary,
+      displayColor: colorScheme.onPrimary,
+    ),
+    cupertinoOverrideTheme: buildCupertinoTheme(
+      locale: locale,
+      brightness: colorScheme.brightness,
+    ),
     extensions: [
       customColors,
       statusColors,
       AppDesignTokens.fallback,
     ],
-    
+
     // --- Basic Elements ---
     scaffoldBackgroundColor: colorScheme.surface,
     dividerTheme: DividerThemeData(
@@ -116,7 +128,7 @@ ThemeData _buildTheme(
       color: colorScheme.onSurface,
       size: 24,
     ),
-    
+
     // --- Widget Themes ---
 
     // App Bar Theme
@@ -137,9 +149,11 @@ ThemeData _buildTheme(
       style: ElevatedButton.styleFrom(
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
+        textStyle: textTheme.labelLarge,
         minimumSize: const Size.fromHeight(48),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
+        shape:
+            const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
         elevation: 0,
       ).copyWith(
         elevation: WidgetStateProperty.resolveWith((states) {
@@ -151,25 +165,32 @@ ThemeData _buildTheme(
 
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
+        textStyle: textTheme.labelLarge,
         minimumSize: const Size.fromHeight(48),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
+        shape:
+            const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
       ),
     ),
 
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
+        textStyle: textTheme.labelLarge,
         minimumSize: const Size.fromHeight(48),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
+        shape:
+            const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
         side: BorderSide(color: colorScheme.outlineVariant, width: 1),
       ),
     ),
 
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        minimumSize: const Size(88, 40),
-        shape: const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
+        minimumSize: const Size(88, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        textStyle: textTheme.labelLarge,
+        shape:
+            const RoundedRectangleBorder(borderRadius: AppBorders.buttonRadius),
       ),
     ),
 
@@ -191,7 +212,7 @@ ThemeData _buildTheme(
     // Input Decoration Theme
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: colorScheme.surfaceContainerLowest,
+      fillColor: colorScheme.surfaceContainerLow,
       contentPadding: AppSpacing.inputPadding,
       border: OutlineInputBorder(
         borderRadius: AppBorders.inputRadius,
@@ -212,9 +233,19 @@ ThemeData _buildTheme(
         borderRadius: AppBorders.inputRadius,
         borderSide: BorderSide(color: colorScheme.error),
       ),
-      floatingLabelStyle: TextStyle(color: colorScheme.primary),
-      labelStyle: textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
-      hintStyle: textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: AppBorders.inputRadius,
+        borderSide: BorderSide(
+          color: colorScheme.error,
+          width: AppBorders.borderWidthActive,
+        ),
+      ),
+      floatingLabelStyle:
+          textTheme.labelMedium?.copyWith(color: colorScheme.primary),
+      labelStyle:
+          textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+      hintStyle:
+          textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
     ),
 
     // Navigation Bar Theme
@@ -226,9 +257,11 @@ ThemeData _buildTheme(
       height: 80,
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
-          return textTheme.labelSmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold);
+          return textTheme.labelSmall?.copyWith(
+              color: colorScheme.primary, fontWeight: FontWeight.bold);
         }
-        return textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant);
+        return textTheme.labelSmall
+            ?.copyWith(color: colorScheme.onSurfaceVariant);
       }),
     ),
 
@@ -237,8 +270,10 @@ ThemeData _buildTheme(
       backgroundColor: colorScheme.surface,
       indicatorColor: colorScheme.secondaryContainer,
       labelType: NavigationRailLabelType.all,
-      unselectedLabelTextStyle: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
-      selectedLabelTextStyle: textTheme.labelSmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold),
+      unselectedLabelTextStyle:
+          textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+      selectedLabelTextStyle: textTheme.labelSmall
+          ?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold),
     ),
 
     // Tab Bar Theme
@@ -254,14 +289,14 @@ ThemeData _buildTheme(
     // Floating Action Button Theme
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       backgroundColor: colorScheme.primary,
-      foregroundColor: colorScheme.onPrimaryContainer,
+      foregroundColor: colorScheme.onPrimary,
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: const RoundedRectangleBorder(borderRadius: AppBorders.lg),
     ),
 
     // Chip Theme
     chipTheme: ChipThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: const RoundedRectangleBorder(borderRadius: AppBorders.sm),
       side: BorderSide(color: colorScheme.outlineVariant),
       backgroundColor: colorScheme.surfaceContainerLow,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -271,15 +306,19 @@ ThemeData _buildTheme(
     // List Tile Theme
     listTileTheme: ListTileThemeData(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: const RoundedRectangleBorder(borderRadius: AppBorders.md),
       visualDensity: VisualDensity.comfortable,
-      titleTextStyle: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-      subtitleTextStyle: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+      titleTextStyle:
+          textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      subtitleTextStyle:
+          textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
     ),
 
     // Checkbox Theme
-    checkboxTheme: CheckboxThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    checkboxTheme: const CheckboxThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppBorders.radius6)),
+      ),
     ),
 
     // Switch Theme
@@ -289,7 +328,9 @@ ThemeData _buildTheme(
         return colorScheme.outline;
       }),
       trackColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) return colorScheme.primaryContainer;
+        if (states.contains(WidgetState.selected)) {
+          return colorScheme.primaryContainer;
+        }
         return colorScheme.surfaceContainerHighest;
       }),
     ),
@@ -297,18 +338,21 @@ ThemeData _buildTheme(
     // SnackBar Theme
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: const RoundedRectangleBorder(borderRadius: AppBorders.md),
       elevation: 4,
       backgroundColor: colorScheme.inverseSurface,
-      contentTextStyle: textTheme.bodyMedium?.copyWith(color: colorScheme.onInverseSurface),
+      contentTextStyle:
+          textTheme.bodyMedium?.copyWith(color: colorScheme.onInverseSurface),
     ),
 
     // Dialog Theme
     dialogTheme: DialogThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape:
+          const RoundedRectangleBorder(borderRadius: AppBorders.dialogRadius),
       elevation: 0,
       backgroundColor: colorScheme.surface,
-      titleTextStyle: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+      titleTextStyle:
+          textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
       contentTextStyle: textTheme.bodyMedium,
     ),
 
@@ -327,9 +371,12 @@ ThemeData _buildTheme(
     searchBarTheme: SearchBarThemeData(
       elevation: WidgetStateProperty.all(0),
       backgroundColor: WidgetStateProperty.all(colorScheme.surfaceContainerLow),
-      shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(28))),
-      padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 16)),
-      hintStyle: WidgetStateProperty.all(textTheme.bodyLarge?.copyWith(color: colorScheme.onSurfaceVariant)),
+      shape: WidgetStateProperty.all(
+          const RoundedRectangleBorder(borderRadius: AppBorders.full)),
+      padding:
+          WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 16)),
+      hintStyle: WidgetStateProperty.all(
+          textTheme.bodyLarge?.copyWith(color: colorScheme.onSurfaceVariant)),
     ),
 
     // Badge Theme
@@ -352,86 +399,64 @@ ThemeData _buildTheme(
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
         color: colorScheme.inverseSurface.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: AppBorders.sm,
       ),
-      textStyle: textTheme.labelSmall?.copyWith(color: colorScheme.onInverseSurface),
+      textStyle:
+          textTheme.labelSmall?.copyWith(color: colorScheme.onInverseSurface),
     ),
   );
 }
 
-/// Builds the Zameel light theme from the fixed marketplace [ColorScheme].
-///
-/// [primaryColorHex] is an optional override for white-labelling; when omitted
-/// the fixed academic-navy primary from [ZameelColorSchemes] is used.
-ThemeData buildLightTheme({String? primaryColorHex}) {
-  var colorScheme = ZameelColorSchemes.lightColorScheme;
-  if (primaryColorHex != null && primaryColorHex.isNotEmpty) {
-    colorScheme = colorScheme.copyWith(primary: _colorFromHex(primaryColorHex));
-  }
-  return _buildTheme(colorScheme, AppPalettes.light, ZameelStatusColors.light);
+/// Builds the fixed Kinship light theme with the locale's bundled typography.
+ThemeData buildLightTheme({Locale locale = const Locale('en')}) {
+  return _buildTheme(
+    ZameelColorSchemes.lightColorScheme,
+    AppPalettes.light,
+    ZameelStatusColors.light,
+    locale,
+  );
 }
 
-/// Builds the Zameel dark theme from the fixed marketplace [ColorScheme].
-ThemeData buildDarkTheme({String? primaryColorHex}) {
-  var colorScheme = ZameelColorSchemes.darkColorScheme;
-  if (primaryColorHex != null && primaryColorHex.isNotEmpty) {
-    colorScheme = colorScheme.copyWith(primary: _colorFromHex(primaryColorHex));
-  }
-  return _buildTheme(colorScheme, AppPalettes.dark, ZameelStatusColors.dark);
+/// Builds the Kinship dark adaptation with the locale's bundled typography.
+ThemeData buildDarkTheme({Locale locale = const Locale('en')}) {
+  return _buildTheme(
+    ZameelColorSchemes.darkColorScheme,
+    AppPalettes.dark,
+    ZameelStatusColors.dark,
+    locale,
+  );
 }
 
-CupertinoThemeData buildCupertinoTheme({required String primaryColorHex}) {
-  final seed = _colorFromHex(primaryColorHex.isNotEmpty ? primaryColorHex : '#007AFF');
+CupertinoThemeData buildCupertinoTheme({
+  Locale locale = const Locale('en'),
+  Brightness brightness = Brightness.light,
+}) {
+  final colorScheme = brightness == Brightness.dark
+      ? ZameelColorSchemes.darkColorScheme
+      : ZameelColorSchemes.lightColorScheme;
+  final textTheme = buildTextTheme(locale: locale).apply(
+    bodyColor: colorScheme.onSurface,
+    displayColor: colorScheme.onSurface,
+  );
+  final actionStyle = textTheme.bodyLarge?.copyWith(color: colorScheme.primary);
 
   return CupertinoThemeData(
     applyThemeToAll: true,
-    primaryColor: seed,
-    primaryContrastingColor: CupertinoColors.white,
-    brightness: null, // Allow system-wide dark mode support
-    scaffoldBackgroundColor: CupertinoColors.systemBackground,
-    barBackgroundColor: CupertinoColors.systemGrey6,
+    primaryColor: colorScheme.primary,
+    primaryContrastingColor: colorScheme.onPrimary,
+    brightness: brightness,
+    scaffoldBackgroundColor: colorScheme.surface,
+    barBackgroundColor: colorScheme.surface,
     textTheme: CupertinoTextThemeData(
-      primaryColor: seed,
-      textStyle: const TextStyle(
-        
-        fontSize: 17,
-        letterSpacing: -0.41,
-      ),
-      actionTextStyle: TextStyle(
-        
-        color: seed,
-        fontSize: 17,
-        fontWeight: FontWeight.w400,
-      ),
-      navTitleTextStyle: const TextStyle(
-        
-        fontWeight: FontWeight.w600,
-        fontSize: 17,
-        letterSpacing: -0.41,
-      ),
-      navLargeTitleTextStyle: const TextStyle(
-        
-        fontWeight: FontWeight.bold,
-        fontSize: 34,
-        letterSpacing: 0.41,
-      ),
-      tabLabelTextStyle: const TextStyle(
-        
-        fontSize: 10,
-        fontWeight: FontWeight.w500,
-        letterSpacing: -0.24,
-      ),
-      pickerTextStyle: const TextStyle(
-        
-        fontSize: 21,
-        letterSpacing: -0.41,
-      ),
-      dateTimePickerTextStyle: const TextStyle(
-        
-        fontSize: 21,
-        letterSpacing: -0.41,
-      ),
+      primaryColor: colorScheme.primary,
+      textStyle: textTheme.bodyLarge,
+      actionTextStyle: actionStyle,
+      navActionTextStyle: actionStyle,
+      navTitleTextStyle: textTheme.titleMedium,
+      navLargeTitleTextStyle: textTheme.headlineLarge,
+      tabLabelTextStyle: textTheme.labelSmall,
+      pickerTextStyle: textTheme.bodyLarge?.copyWith(fontSize: 21),
+      dateTimePickerTextStyle: textTheme.bodyLarge?.copyWith(fontSize: 21),
     ),
   );
 }
-

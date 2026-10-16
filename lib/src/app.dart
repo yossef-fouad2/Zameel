@@ -1,31 +1,47 @@
-﻿import 'package:zameel/src/imports/core_imports.dart';
+import 'package:zameel/src/imports/imports.dart';
+import 'ui/auth/bloc/session_bloc.dart';
 
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   const App({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final current = _buildMaterialApp(context);
-    return ScreenUtilWrapper(child: current);
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  late final SessionRouterRefresh _refresh;
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    final session = context.read<SessionBloc>();
+    _refresh = SessionRouterRefresh(session);
+    _router = createAppRouter(session, refreshListenable: _refresh);
   }
 
-  Widget _buildMaterialApp(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Zameel',
-      debugShowCheckedModeBanner: false,
-      theme: buildLightTheme(),
-      darkTheme: buildDarkTheme(),
-      themeMode: ThemeMode.system,
-      routerConfig: appRouter,
-      localizationsDelegates: context.localizationDelegates,
-      supportedLocales: context.supportedLocales,
-      locale: context.locale,
-      builder: (context, child) {
-        Widget current = child!;
-        current = SkeletonWrapper(child: current);
-        current = SessionListenerWrapper(child: current);
-        return current;
-      },
-    );
+  @override
+  void dispose() {
+    _router.dispose();
+    _refresh.dispose();
+    super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => ScreenUtilWrapper(
+        child: MaterialApp.router(
+          title: 'Zameel',
+          debugShowCheckedModeBanner: false,
+          theme: buildLightTheme(locale: context.locale),
+          darkTheme: buildDarkTheme(locale: context.locale),
+          themeMode: ThemeMode.system,
+          routerConfig: _router,
+          localizationsDelegates: context.localizationDelegates,
+          supportedLocales: context.supportedLocales,
+          locale: context.locale,
+          builder: (context, child) => SessionListenerWrapper(
+            child: SkeletonWrapper(child: child ?? const SizedBox.shrink()),
+          ),
+        ),
+      );
 }

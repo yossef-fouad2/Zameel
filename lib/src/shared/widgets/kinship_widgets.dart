@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 import '../../theme/app_borders.dart';
 import '../../theme/app_spacing.dart';
@@ -35,7 +36,7 @@ class KinshipBrandMark extends StatelessWidget {
           height: compact ? 28.w : 34.w,
           decoration: BoxDecoration(
             color: iconBackgroundColor ?? colors.primary,
-            borderRadius: BorderRadius.circular(compact ? 8.r : 10.r),
+            borderRadius: AppBorders.input,
           ),
           child: Icon(
             Icons.diversity_3,
@@ -44,32 +45,32 @@ class KinshipBrandMark extends StatelessWidget {
           ),
         ),
         SizedBox(width: AppSpacing.sm),
-        Text(
-          'Zameel',
-          style: (compact ? textTheme.titleMedium : textTheme.titleLarge)
-              ?.copyWith(
-            color: foreground,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
+        Flexible(
+          child: Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Zameel',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: (compact ? textTheme.titleMedium : textTheme.titleLarge)
+                    ?.copyWith(
+                  color: foreground,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              if (showCampus && !compact)
+                KinshipPill(
+                  label: 'role_selection.campus'.tr(),
+                  backgroundColor: colors.tertiaryContainer,
+                  foregroundColor: colors.onTertiaryContainer,
+                ),
+            ],
           ),
         ),
-        if (showCampus) ...[
-          SizedBox(width: AppSpacing.xs),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
-            decoration: BoxDecoration(
-              color: colors.tertiaryContainer,
-              borderRadius: AppBorders.full,
-            ),
-            child: Text(
-              'Campus',
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.onTertiaryContainer,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -95,7 +96,11 @@ class KinshipPill extends StatelessWidget {
     final foreground = foregroundColor ?? colors.onSurfaceVariant;
 
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width),
+      padding: EdgeInsets.symmetric(
+        horizontal: AppSpacing.ms,
+        vertical: AppSpacing.xs,
+      ),
       decoration: BoxDecoration(
         color: backgroundColor ?? colors.surfaceContainerLow,
         borderRadius: AppBorders.full,
@@ -107,12 +112,14 @@ class KinshipPill extends StatelessWidget {
             Icon(icon, size: 15.sp, color: foreground),
             SizedBox(width: AppSpacing.xs),
           ],
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: foreground,
-                  fontWeight: FontWeight.w700,
-                ),
+          Flexible(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
           ),
         ],
       ),

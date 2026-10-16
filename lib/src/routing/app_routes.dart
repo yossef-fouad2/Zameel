@@ -16,4 +16,10 @@ abstract final class AppRoutes {
   static const String studentOnboarding = '/student/onboarding';
   static const String lifestyleQuiz = '/student/lifestyle-quiz';
   static const String discovery = '/student/discovery';
+  static const String confirmEmail = '/auth/confirm-email';
+  static const String recoveryCode = '/auth/recovery-code';
+  static const String updatePassword = '/auth/update-password';
+  static const String sessionError = '/auth/session-error';
+  static const String account = '/account';
+  static const String landlord = '/landlord';
 }
