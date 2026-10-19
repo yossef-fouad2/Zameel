@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:fpdart/fpdart.dart';
 import 'package:zameel/src/data/models/auth_result.dart';
 import 'package:zameel/src/data/models/lifestyle_preferences.dart';
+import 'package:zameel/src/data/models/lifestyle_snapshot.dart';
 import 'package:zameel/src/data/models/user_model.dart';
 import 'package:zameel/src/data/models/user_role.dart';
 import 'package:zameel/src/data/repositories/auth_repository.dart';
@@ -108,23 +109,44 @@ class FakeAuthRepository implements AuthRepository {
 
 class FakePreferencesRepository implements LifestylePreferencesRepository {
   final values = <String, LifestylePreferences>{};
+  final revisions = <String, int>{};
+  final localDrafts = <String>{};
   Failure? failure;
+  int loadCalls = 0;
+  int saveCalls = 0;
+  FutureEither<LifestyleSnapshot> Function(String userId)? onGet;
   @override
-  FutureEither<LifestylePreferences?> getPreferences(
-          {required String userId}) async =>
-      failure != null ? left(failure!) : right(values[userId]);
-  @override
-  FutureEither<void> savePreferences(
-      {required String userId,
-      required LifestylePreferences preferences}) async {
+  FutureEither<LifestyleSnapshot> getPreferences(
+      {required String userId}) async {
+    loadCalls++;
+    if (onGet != null) return onGet!(userId);
     if (failure != null) return left(failure!);
-    values[userId] = preferences;
-    return right(null);
+    return right(LifestyleSnapshot(
+      userId: userId,
+      preferences: values[userId] ?? const LifestylePreferences(),
+      revision: revisions[userId] ?? 0,
+      isLocalDraft: localDrafts.contains(userId),
+    ));
   }
 
   @override
-  FutureEither<void> deletePreferences({required String userId}) async {
-    values.remove(userId);
-    return right(null);
+  FutureEither<LifestyleSnapshot> savePreferences(
+      {required String userId,
+      required LifestyleSnapshot original,
+      required LifestylePreferences preferences}) async {
+    saveCalls++;
+    if (failure != null) return left(failure!);
+    final saved = preferences.copyWith(
+        completedAt: preferences.isComplete ? DateTime.utc(2026, 10, 18) : null,
+        skippedAt: preferences.isSkipped ? DateTime.utc(2026, 10, 18) : null);
+    values[userId] = saved;
+    revisions[userId] = original.revision + 1;
+    localDrafts.remove(userId);
+    return right(LifestyleSnapshot(
+      userId: userId,
+      preferences: saved,
+      revision: original.revision + 1,
+      answers: original.answersFor(saved),
+    ));
   }
 }

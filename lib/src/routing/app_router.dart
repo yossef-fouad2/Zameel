@@ -18,6 +18,7 @@ import '../ui/student/lifestyle_quiz/lifestyle_quiz_page.dart';
 import '../ui/student/onboarding_bridge_page.dart';
 import 'app_routes.dart';
 import 'global_navigator.dart';
+import 'app_transition_page.dart';
 
 /// No widget decides its own access permissions. RLS enforces them server-side.
 String? sessionRedirect(SessionState session, Uri uri) {
@@ -157,12 +158,19 @@ GoRouter createAppRouter(SessionBloc session,
         GoRoute(
             path: AppRoutes.lifestyleQuiz,
             name: 'lifestyleQuiz',
-            builder: (context, _) {
+            pageBuilder: (context, state) {
               final user = session.state.user;
-              if (user == null) return const SessionGatePage();
-              return LifestyleQuizPage(
-                  userId: user.id,
-                  repository: context.read<LifestylePreferencesRepository>());
+              return appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: user == null
+                    ? const SessionGatePage()
+                    : LifestyleQuizPage(
+                        key: ValueKey(user.id),
+                        userId: user.id,
+                        repository:
+                            context.read<LifestylePreferencesRepository>()),
+              );
             }),
         GoRoute(
             path: AppRoutes.discovery,
@@ -171,12 +179,17 @@ GoRouter createAppRouter(SessionBloc session,
         GoRoute(
             path: AppRoutes.landlord,
             name: 'landlord',
-            builder: (context, state) =>
-                const AccountPage(landlordLanding: true)),
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: const AccountPage(landlordLanding: true))),
         GoRoute(
             path: AppRoutes.account,
             name: 'account',
-            builder: (context, state) => const AccountPage()),
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: const AccountPage())),
         GoRoute(
             path: AppRoutes.home,
             name: 'home',

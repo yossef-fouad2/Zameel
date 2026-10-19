@@ -3,6 +3,8 @@ import '../../data/repositories/auth_repository_impl.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/lifestyle_preferences_repository.dart';
 import '../../data/repositories/lifestyle_preferences_repository_impl.dart';
+import '../../data/repositories/profile_repository.dart';
+import '../../data/repositories/profile_repository_impl.dart';
 import '../../ui/auth/bloc/auth_bloc.dart';
 import '../../ui/auth/bloc/session_bloc.dart';
 
@@ -11,12 +13,14 @@ class StateWrapper extends StatelessWidget {
   final Widget child;
   final AuthRepository? repository;
   final LifestylePreferencesRepository? preferencesRepository;
+  final ProfileRepository? profileRepository;
 
   const StateWrapper({
     super.key,
     required this.child,
     this.repository,
     this.preferencesRepository,
+    this.profileRepository,
   });
 
   @override
@@ -28,6 +32,9 @@ class StateWrapper extends StatelessWidget {
         RepositoryProvider<LifestylePreferencesRepository>(
           create: (_) =>
               preferencesRepository ?? LifestylePreferencesRepositoryImpl(),
+        ),
+        RepositoryProvider<ProfileRepository>(
+          create: (_) => profileRepository ?? ProfileRepositoryImpl(),
         ),
       ],
       child: MultiBlocProvider(

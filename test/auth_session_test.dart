@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:zameel/src/config/app_config.dart';
 import 'package:zameel/src/data/models/auth_result.dart';
 import 'package:zameel/src/data/models/lifestyle_preferences.dart';
+import 'package:zameel/src/data/models/lifestyle_snapshot.dart';
 import 'package:zameel/src/data/models/user_model.dart';
 import 'package:zameel/src/data/models/user_role.dart';
 import 'package:zameel/src/routing/app_router.dart';
@@ -175,6 +176,184 @@ void main() {
     await bloc.stream.firstWhere((state) => state.hasCompletedOnboarding);
     expect(preferences.values[student.id]?.isSkipped, isTrue);
     expect(preferences.values[student.id]?.sleepSchedule, isNull);
+    expect(preferences.loadCalls, 1);
+    expect(preferences.saveCalls, 1);
+  });
+
+  test(
+      'cloud read failure is retryable, not silently treated as first onboarding',
+      () async {
+    final preferences = FakePreferencesRepository()
+      ..failure = const NetworkFailure('student_quiz.request_failed');
+    repository.user = student;
+    final bloc =
+        SessionBloc(repository: repository, preferencesRepository: preferences);
+    addTearDown(bloc.close);
+    final failed = await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.failure);
+    expect(failed.errorMessage, 'student_quiz.request_failed');
+    expect(preferences.saveCalls, 0);
+    preferences.failure = null;
+    preferences.values[student.id] =
+        const LifestylePreferences(isSkipped: true);
+    bloc.add(const SessionCheckRequested());
+    final restored = await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.authenticated);
+    expect(restored.hasCompletedOnboarding, isTrue);
+  });
+
+  test(
+      'canonical quiz save updates onboarding without reloading auth or preferences',
+      () async {
+    final preferences = FakePreferencesRepository();
+    var authLoads = 0;
+    repository.onCheck = () async {
+      authLoads++;
+      return right(student);
+    };
+    final bloc =
+        SessionBloc(repository: repository, preferencesRepository: preferences);
+    addTearDown(bloc.close);
+    await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.authenticated);
+    bloc.add(SessionPreferencesUpdated(LifestyleSnapshot(
+      userId: student.id,
+      revision: 3,
+      preferences: const LifestylePreferences(isSkipped: true),
+    )));
+    await bloc.stream.firstWhere((state) => state.hasCompletedOnboarding);
+    bloc.add(SessionPreferencesUpdated(
+        LifestyleSnapshot(userId: student.id, revision: 1)));
+    bloc.add(SessionPreferencesUpdated(
+        LifestyleSnapshot(userId: 'another-student', revision: 5)));
+    await Future<void>.delayed(Duration.zero);
+    expect(bloc.state.hasCompletedOnboarding, isTrue);
+    expect(authLoads, 1);
+    expect(preferences.loadCalls, 1);
+  });
+
+  test('bridge does not upload a legacy device-only draft without quiz review',
+      () async {
+    final preferences = FakePreferencesRepository();
+    preferences.values[student.id] =
+        const LifestylePreferences(sleepSchedule: SleepSchedule.earlyBird);
+    preferences.localDrafts.add(student.id);
+    repository.user = student;
+    final bloc =
+        SessionBloc(repository: repository, preferencesRepository: preferences);
+    addTearDown(bloc.close);
+    await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.authenticated);
+    bloc.add(const SessionOnboardingSkipRequested());
+    final failed =
+        await bloc.stream.firstWhere((state) => state.errorMessage != null);
+    expect(failed.errorMessage, 'student_quiz.review_local');
+    expect(preferences.saveCalls, 0);
+    expect(preferences.localDrafts, contains(student.id));
+  });
+
+  test('later session refresh cannot replace a newer confirmed preference save',
+      () async {
+    final preferences = FakePreferencesRepository();
+    repository.user = student;
+    final bloc =
+        SessionBloc(repository: repository, preferencesRepository: preferences);
+    addTearDown(bloc.close);
+    await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.authenticated);
+    bloc.add(SessionPreferencesUpdated(LifestyleSnapshot(
+      userId: student.id,
+      revision: 5,
+      preferences: const LifestylePreferences(isSkipped: true),
+    )));
+    await bloc.stream.firstWhere((state) => state.hasCompletedOnboarding);
+    final read = Completer<void>();
+    preferences.onGet = (id) async {
+      read.complete();
+      return right(LifestyleSnapshot(userId: id, revision: 2));
+    };
+    bloc.add(const SessionCheckRequested());
+    await read.future;
+    await Future<void>.delayed(Duration.zero);
+    expect(bloc.state.status, SessionStatus.authenticated);
+    expect(bloc.state.hasCompletedOnboarding, isTrue);
+  });
+
+  test(
+      'a transient preferences refresh keeps an already authenticated editor alive',
+      () async {
+    final preferences = FakePreferencesRepository();
+    preferences.values[student.id] =
+        const LifestylePreferences(isSkipped: true);
+    repository.user = student;
+    final bloc =
+        SessionBloc(repository: repository, preferencesRepository: preferences);
+    addTearDown(bloc.close);
+    await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.authenticated);
+    preferences.failure = const NetworkFailure('student_quiz.request_failed');
+    bloc.add(const SessionCheckRequested());
+    final failed =
+        await bloc.stream.firstWhere((state) => state.errorMessage != null);
+    expect(failed.status, SessionStatus.authenticated);
+    expect(failed.hasCompletedOnboarding, isTrue);
+    expect(sessionRedirect(failed, Uri.parse(AppRoutes.lifestyleQuiz)), isNull);
+  });
+
+  test('a late quiz save cannot cancel an in-flight switch to another account',
+      () async {
+    final preferences = FakePreferencesRepository();
+    repository.user = student;
+    final bloc =
+        SessionBloc(repository: repository, preferencesRepository: preferences);
+    addTearDown(bloc.close);
+    await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.authenticated);
+    final switched = Completer<Either<Failure, AppUser?>>();
+    final started = Completer<void>();
+    repository.onCheck = () {
+      started.complete();
+      return switched.future;
+    };
+    repository.changes.add(AuthSessionChange.refreshed);
+    await started.future;
+    bloc.add(SessionPreferencesUpdated(LifestyleSnapshot(
+        userId: student.id,
+        revision: 3,
+        preferences: const LifestylePreferences(isSkipped: true))));
+    await bloc.stream.firstWhere((state) => state.hasCompletedOnboarding);
+    const nextUser = AppUser(
+        id: 'student-2', email: 'next@example.test', role: UserRole.student);
+    switched.complete(right(nextUser));
+    final state =
+        await bloc.stream.firstWhere((state) => state.user == nextUser);
+    expect(state.status, SessionStatus.authenticated);
+    expect(state.hasCompletedOnboarding, isFalse);
+  });
+
+  test('sign-out while cloud preferences load cannot restore the old session',
+      () async {
+    final gate = Completer<Either<Failure, LifestyleSnapshot>>();
+    final started = Completer<void>();
+    final preferences = FakePreferencesRepository()
+      ..onGet = (_) {
+        started.complete();
+        return gate.future;
+      };
+    repository.user = student;
+    final bloc =
+        SessionBloc(repository: repository, preferencesRepository: preferences);
+    addTearDown(bloc.close);
+    await started.future;
+    repository.changes.add(AuthSessionChange.signedOut);
+    await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.unauthenticated);
+    gate.complete(right(LifestyleSnapshot(
+        userId: student.id,
+        preferences: const LifestylePreferences(isSkipped: true))));
+    await Future<void>.delayed(Duration.zero);
+    expect(bloc.state.status, SessionStatus.unauthenticated);
+    expect(bloc.state.user, isNull);
   });
 
   test('route guards block anonymous and wrong-role deep links', () {
@@ -207,6 +386,31 @@ void main() {
         sessionRedirect(
             const SessionState.unknown(), Uri.parse(AppRoutes.discovery)),
         AppRoutes.splash);
+  });
+
+  test('profile updates ignore older snapshots and other accounts', () async {
+    repository.user = student;
+    final bloc = SessionBloc(repository: repository);
+    addTearDown(bloc.close);
+    await bloc.stream
+        .firstWhere((state) => state.status == SessionStatus.authenticated);
+    final updated = AppUser(
+        id: student.id,
+        email: student.email,
+        name: 'Current name',
+        role: student.role,
+        updatedAt: DateTime.utc(2026, 10, 17));
+    bloc.add(SessionProfileUpdated(updated));
+    await bloc.stream.firstWhere((state) => state.user == updated);
+    bloc.add(SessionProfileUpdated(AppUser(
+        id: student.id,
+        email: student.email,
+        name: 'Stale name',
+        role: student.role,
+        updatedAt: DateTime.utc(2026, 10, 16))));
+    bloc.add(const SessionProfileUpdated(landlord));
+    await Future<void>.delayed(Duration.zero);
+    expect(bloc.state.user, updated);
   });
 
   test('client configuration rejects placeholders and privileged keys', () {

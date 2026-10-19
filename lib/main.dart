@@ -19,8 +19,6 @@ Future<void> main() async {
     AppLogger.error(
         'Supabase initialization failed; check local configuration.');
   }
-  if (!configured) FlutterNativeSplash.remove();
-
   runApp(
     LocalizationWrapper(
       child: configured
@@ -28,4 +26,8 @@ Future<void> main() async {
           : const SetupRequiredApp(),
     ),
   );
+  // Never defer the first frame on a network/session check. The app's own
+  // SessionGatePage shows loading/error states, so startup cannot get stuck
+  // behind the native splash when the initial auth response is slow or missed.
+  FlutterNativeSplash.remove();
 }

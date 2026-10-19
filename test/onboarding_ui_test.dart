@@ -11,11 +11,13 @@ import 'package:fpdart/fpdart.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zameel/src/data/models/lifestyle_preferences.dart';
+import 'package:zameel/src/data/models/lifestyle_snapshot.dart';
 import 'package:zameel/src/data/models/user_model.dart';
 import 'package:zameel/src/data/models/user_role.dart';
 import 'package:zameel/src/data/repositories/lifestyle_preferences_repository.dart';
 import 'package:zameel/src/routing/app_routes.dart';
 import 'package:zameel/src/shared/widgets/app_button.dart';
+import 'package:zameel/src/shared/widgets/app_card.dart';
 import 'package:zameel/src/shared/widgets/app_top_bar.dart';
 import 'package:zameel/src/shared/widgets/kinship_widgets.dart';
 import 'package:zameel/src/theme/theme_constants.dart';
@@ -168,12 +170,17 @@ void main() {
                 )
                 .value,
             0);
-        await tester.scrollUntilVisible(
-          find.text('student_quiz.skip'.tr()),
-          500,
-          maxScrolls: 100,
-        );
-        expect(tester.takeException(), isNull);
+        for (final key in [
+          'sleep_title',
+          'study_title',
+          'clean_title',
+          'guests_title',
+          'room_title',
+          'skip',
+        ]) {
+          await _reveal(tester, find.text('student_quiz.$key'.tr()));
+          expect(tester.takeException(), isNull);
+        }
 
         await _pumpSurface(
           tester,
@@ -243,7 +250,7 @@ void main() {
     expect(
         tester
             .widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.account_circle_outlined),
+              find.widgetWithIcon(IconButton, Icons.account_circle_outlined),
             )
             .onPressed,
         isNull);
@@ -258,7 +265,8 @@ void main() {
     expect(find.text('Account destination'), findsOneWidget);
   });
 
-  testWidgets('bridge two-column preview has bounded layout at normal text size',
+  testWidgets(
+      'bridge two-column preview has bounded layout at normal text size',
       (tester) async {
     final session = _RecordingSessionBloc();
     addTearDown(session.close);
@@ -270,7 +278,9 @@ void main() {
     );
     expect(
       tester.getCenter(find.byIcon(Icons.bedroom_parent_outlined)).dx,
-      lessThan(tester.getCenter(find.byIcon(Icons.cleaning_services_outlined).first).dx),
+      lessThan(tester
+          .getCenter(find.byIcon(Icons.cleaning_services_outlined).first)
+          .dx),
     );
     expect(tester.takeException(), isNull);
   });
@@ -309,22 +319,50 @@ void main() {
 
   for (final skip in [false, true]) {
     testWidgets(
-        'quiz ${skip ? 'skip' : 'save'} disables controls then refreshes session',
+        'quiz ${skip ? 'partial skip' : 'save'} applies the canonical snapshot without a session reload',
         (tester) async {
       final repository = _PreferencesRepository()
-        ..saved = skip ? const LifestylePreferences() : _answers
+        ..saved = skip
+            ? const LifestylePreferences(
+                sleepSchedule: SleepSchedule.nightOwl,
+                studyAtmosphere: StudyAtmosphere.social,
+              )
+            : _answers.copyWith(
+                isSkipped: true,
+                skippedAt: DateTime.utc(2025),
+              )
         ..saveGate = Completer<void>();
+      if (skip) {
+        repository.snapshot = LifestyleSnapshot(
+          userId: _student.id,
+          preferences: repository.saved!,
+          isLocalDraft: true,
+        );
+      }
       final session = _RecordingSessionBloc();
-      final router = _router(AppRoutes.lifestyleQuiz, repository: repository);
+      final router = _router(
+        skip ? AppRoutes.lifestyleQuiz : AppRoutes.account,
+        repository: repository,
+      );
       addTearDown(session.close);
       addTearDown(router.dispose);
+      addTearDown(() {
+        if (!repository.saveGate!.isCompleted) repository.saveGate!.complete();
+      });
       await _pumpSurface(tester, router: router, session: session);
+      if (!skip) {
+        unawaited(router.pushNamed<void>('lifestyleQuiz'));
+        await tester.pumpAndSettle();
+      }
+      final bloc = _quizBloc(tester);
+      final original = bloc.state.snapshot!;
       final action = find.text('student_quiz.${skip ? 'skip' : 'save'}'.tr());
-      await tester.scrollUntilVisible(action, 400, maxScrolls: 50);
+      await _reveal(tester, action);
       await tester.tap(action);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(repository.saveCalls, 1);
+      expect(repository.savedOriginal, same(original));
       final save = tester.widget<AppButton>(find.byType(AppButton));
       expect(save.onPressed, isNull);
       expect(save.isLoading, isTrue);
@@ -335,19 +373,383 @@ void main() {
               )
               .onPressed,
           isNull);
-      expect(session.events.whereType<SessionCheckRequested>(), isEmpty);
+      expect(
+        tester
+            .widget<IconButton>(find.widgetWithIcon(
+              IconButton,
+              Icons.account_circle_outlined,
+            ))
+            .onPressed,
+        isNull,
+      );
+      if (!skip) {
+        await tester.tap(find.byType(BackButton));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.byType(LifestyleQuizPage), findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.byType(LifestyleQuizPage), findsOneWidget);
+        expect(find.byType(AlertDialog), findsNothing);
+      }
+      expect(session.events, isEmpty);
 
       repository.saveGate!.complete();
       await tester.pumpAndSettle();
-      expect(find.byType(StudentDiscoveryPage), findsOneWidget);
-      expect(session.events.whereType<SessionCheckRequested>(), hasLength(1));
+      if (skip) {
+        expect(find.byType(StudentDiscoveryPage), findsOneWidget);
+      } else {
+        expect(find.text('Account destination'), findsOneWidget);
+        expect(find.byType(StudentDiscoveryPage), findsNothing);
+      }
+      expect(find.byType(LifestyleQuizPage), findsNothing);
+      final updated = session.events.whereType<SessionPreferencesUpdated>();
+      expect(updated, hasLength(1));
+      expect(session.events, hasLength(1));
+      expect(session.events.whereType<SessionCheckRequested>(), isEmpty);
+      final canonical = updated.single.snapshot;
+      expect(canonical, same(repository.snapshot));
+      expect(canonical, same(bloc.state.snapshot));
+      expect(canonical.userId, _student.id);
+      expect(canonical.revision, original.revision + 1);
+      expect(canonical.isLocalDraft, isFalse);
+      expect(canonical.answers, original.answersFor(repository.saved!));
+      expect(bloc.state.savedCount, 1);
+      expect(bloc.state.isDirty, isFalse);
+      expect(repository.loadCalls, 1);
       expect(repository.savedUserId, _student.id);
       expect(repository.saved!.isSkipped, skip);
       expect(repository.saved!.isComplete, !skip);
-      if (skip) expect(repository.saved!.sleepSchedule, isNull);
+      expect(repository.saved!.answeredCount, skip ? 2 : 5);
+      expect(repository.saved!.sleepSchedule,
+          skip ? SleepSchedule.nightOwl : SleepSchedule.earlyBird);
+      expect(repository.saved!.completedAt,
+          skip ? isNull : _PreferencesRepository.serverTime);
+      expect(repository.saved!.skippedAt,
+          skip ? _PreferencesRepository.serverTime : isNull);
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('opening a legacy draft explains import without writing it',
+      (tester) async {
+    final draft = LifestyleSnapshot(
+      userId: _student.id,
+      preferences: const LifestylePreferences(
+        sleepSchedule: SleepSchedule.nightOwl,
+      ),
+      isLocalDraft: true,
+    );
+    final repository = _PreferencesRepository()..snapshot = draft;
+    final session = _RecordingSessionBloc();
+    addTearDown(session.close);
+    await _pumpSurface(
+      tester,
+      session: session,
+      home: LifestyleQuizPage(userId: _student.id, repository: repository),
+    );
+    expect(find.text('student_quiz.local_draft'.tr()), findsOneWidget);
+    expect(find.text('student_quiz.import_notice'.tr()), findsOneWidget);
+    final state = _quizBloc(tester).state;
+    expect(state.snapshot, same(draft));
+    expect(state.preferences, draft.preferences);
+    expect(state.needsImport, isTrue);
+    expect(state.isDirty, isFalse);
+    expect(state.savedCount, 0);
+    final selected = find.byKey(const ValueKey('quiz.sleep.nightOwl'));
+    await _reveal(tester, selected);
+    expect(
+      find.descendant(of: selected, matching: find.byIcon(Icons.check_circle)),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 2));
+    expect(repository.loadCalls, 1);
+    expect(repository.saveCalls, 0);
+    expect(session.events, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final failure in [
+    const NetworkFailure('student_quiz.request_failed'),
+    const ServerFailure('student_quiz.conflict'),
+  ]) {
+    testWidgets('${failure.message} preserves edits until a confirmed reload',
+        (tester) async {
+      final repository = _PreferencesRepository()
+        ..saved = _answers
+        ..saveFailure = failure;
+      final session = _RecordingSessionBloc();
+      addTearDown(session.close);
+      await _pumpSurface(
+        tester,
+        session: session,
+        home: LifestyleQuizPage(userId: _student.id, repository: repository),
+      );
+      final bloc = _quizBloc(tester);
+      final original = bloc.state.snapshot!;
+      final night = find.byKey(const ValueKey('quiz.sleep.nightOwl'));
+      await _reveal(tester, night);
+      await tester.tap(night);
+      await tester.pumpAndSettle();
+      final save = find.widgetWithText(AppButton, 'student_quiz.save'.tr());
+      final skip = find.widgetWithText(TextButton, 'student_quiz.skip'.tr());
+      await _reveal(tester, save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      expect(find.text(failure.message.tr()), findsOneWidget);
+      expect(repository.saveCalls, 1);
+      expect(repository.saved, _answers);
+      expect(repository.savedOriginal, same(original));
+      expect(bloc.state.snapshot, same(original));
+      expect(bloc.state.preferences.sleepSchedule, SleepSchedule.nightOwl);
+      expect(bloc.state.isDirty, isTrue);
+      expect(bloc.state.needsReload, isTrue);
+      expect(bloc.state.savedCount, 0);
+
+      await _reveal(tester, night, delta: -400);
+      expect(
+        find.descendant(of: night, matching: find.byIcon(Icons.check_circle)),
+        findsOneWidget,
+      );
+      final average = find.byKey(const ValueKey('quiz.sleep.average'));
+      await _reveal(tester, average, delta: -400);
+      await tester.tap(average);
+      await tester.pumpAndSettle();
+      expect(bloc.state.preferences.sleepSchedule, SleepSchedule.average);
+      expect(bloc.state.needsReload, isTrue);
+      expect(bloc.state.errorMessage, failure.message);
+      await _reveal(tester, save);
+      expect(tester.widget<AppButton>(save).onPressed, isNull);
+      await tester.tap(save);
+      await _reveal(tester, skip);
+      expect(tester.widget<TextButton>(skip).onPressed, isNull);
+      await tester.tap(skip);
+      await tester.pumpAndSettle();
+      expect(repository.saveCalls, 1);
+      expect(repository.loadCalls, 1);
+
+      final remote = LifestyleSnapshot(
+        userId: _student.id,
+        preferences: _answers,
+        answers: original.answersFor(_answers),
+        revision: original.revision + 1,
+      );
+      repository.snapshot = remote;
+      repository.saveFailure = null;
+      final reload = find.widgetWithText(AppButton, 'student_quiz.reload'.tr());
+      await _reveal(tester, reload, delta: -400);
+      await tester.tap(reload);
+      await tester.pumpAndSettle();
+      expect(find.text('student_quiz.discard_title'.tr()), findsOneWidget);
+      expect(repository.loadCalls, 1);
+      await tester.tap(find.text('profile.keep_editing'.tr()));
+      await tester.pumpAndSettle();
+      expect(repository.loadCalls, 1);
+      expect(bloc.state.preferences.sleepSchedule, SleepSchedule.average);
+      expect(bloc.state.needsReload, isTrue);
+
+      await tester.tap(reload);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'profile.discard'.tr()));
+      await tester.pumpAndSettle();
+      expect(repository.loadCalls, 2);
+      expect(repository.saveCalls, 1);
+      expect(bloc.state.snapshot, same(remote));
+      expect(bloc.state.preferences, remote.preferences);
+      expect(bloc.state.isDirty, isFalse);
+      expect(bloc.state.needsReload, isFalse);
+      expect(bloc.state.errorMessage, isNull);
+      final early = find.byKey(const ValueKey('quiz.sleep.earlyBird'));
+      await _reveal(tester, early, delta: -400);
+      expect(
+        find.descendant(of: early, matching: find.byIcon(Icons.check_circle)),
+        findsOneWidget,
+      );
+      await _reveal(tester, save);
+      expect(tester.widget<AppButton>(save).onPressed, isNotNull);
+      expect(tester.widget<TextButton>(skip).onPressed, isNotNull);
+      expect(session.events, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final systemBack in [false, true]) {
+    testWidgets(
+        'pushed quiz ${systemBack ? 'system' : 'toolbar'} back keeps or discards edits without saving',
+        (tester) async {
+      final repository = _PreferencesRepository();
+      final session = _RecordingSessionBloc();
+      final router = _router(AppRoutes.account, repository: repository);
+      addTearDown(session.close);
+      addTearDown(router.dispose);
+      await _pumpSurface(tester, router: router, session: session);
+      unawaited(router.pushNamed<void>('lifestyleQuiz'));
+      await tester.pumpAndSettle();
+      final bloc = _quizBloc(tester);
+      final early = find.byKey(const ValueKey('quiz.sleep.earlyBird'));
+      await _reveal(tester, early);
+      await tester.tap(early);
+      await tester.pumpAndSettle();
+      expect(bloc.state.isDirty, isTrue);
+
+      Future<void> requestBack() => systemBack
+          ? tester.binding.handlePopRoute()
+          : tester.tap(find.byType(BackButton));
+
+      await requestBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(LifestyleQuizPage), findsOneWidget);
+      expect(find.text('student_quiz.discard_title'.tr()), findsOneWidget);
+      await tester.tap(find.text('profile.keep_editing'.tr()));
+      await tester.pumpAndSettle();
+      expect(find.byType(LifestyleQuizPage), findsOneWidget);
+      expect(bloc.state.preferences.sleepSchedule, SleepSchedule.earlyBird);
+      expect(bloc.state.isDirty, isTrue);
+
+      await requestBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'profile.discard'.tr()));
+      await tester.pumpAndSettle();
+      expect(find.text('Account destination'), findsOneWidget);
+      expect(find.byType(LifestyleQuizPage), findsNothing);
+      expect(find.byType(StudentDiscoveryPage), findsNothing);
+      expect(repository.loadCalls, 1);
+      expect(repository.saveCalls, 0);
+      expect(session.events, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('repeated answers do no IO or rebuild another visible question',
+      (tester) async {
+    final repository = _PreferencesRepository();
+    await _pumpSurface(
+      tester,
+      size: const Size(390, 844),
+      home: LifestyleQuizPage(userId: _student.id, repository: repository),
+    );
+    expect(find.byKey(const ValueKey('quiz.room.privateRoom')), findsNothing);
+    final bloc = _quizBloc(tester);
+    final early = find.byKey(const ValueKey('quiz.sleep.earlyBird'));
+    await _reveal(tester, early);
+    await tester.tap(early);
+    await tester.pumpAndSettle();
+    final studyTitle = find.text('student_quiz.study_title'.tr());
+    expect(studyTitle.hitTestable(), findsOneWidget);
+    final studyCard = tester.element(
+      find.ancestor(of: studyTitle, matching: find.byType(AppCard)),
+    );
+    final editedCard = tester.element(
+      find.ancestor(of: early, matching: find.byType(AppCard)),
+    );
+    var editedRebuilds = 0;
+    var unrelatedRebuilds = 0;
+    final previousRebuildCallback = debugOnRebuildDirtyWidget;
+    addTearDown(() => debugOnRebuildDirtyWidget = previousRebuildCallback);
+    debugOnRebuildDirtyWidget = (element, builtOnce) {
+      previousRebuildCallback?.call(element, builtOnce);
+      if (identical(element, editedCard)) editedRebuilds++;
+      if (identical(element, studyCard)) unrelatedRebuilds++;
+    };
+
+    for (var index = 0; index < 18; index++) {
+      final value = SleepSchedule.values[(index + 1) % 3];
+      final option = find.byKey(ValueKey('quiz.sleep.${value.name}'));
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+      expect(bloc.state.preferences.sleepSchedule, value);
+    }
+    expect(editedRebuilds, greaterThanOrEqualTo(18));
+    expect(unrelatedRebuilds, 0);
+    expect(studyTitle.hitTestable(), findsOneWidget);
+    expect(bloc.state.preferences.answeredCount, 1);
+    expect(bloc.state.isDirty, isTrue);
+    expect(repository.loadCalls, 1);
+    expect(repository.saveCalls, 0);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    expect(tester.binding.transientCallbackCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reduced motion makes quiz animations immediate and idle settles',
+      (tester) async {
+    final repository = _PreferencesRepository();
+    await _pumpSurface(
+      tester,
+      disableAnimations: true,
+      home: LifestyleQuizPage(userId: _student.id, repository: repository),
+    );
+    final early = find.byKey(const ValueKey('quiz.sleep.earlyBird'));
+    await _reveal(tester, early);
+    await tester.tap(early);
+    await tester.pump();
+    expect(
+      find.descendant(of: early, matching: find.byIcon(Icons.check_circle)),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AnimatedContainer>(find.descendant(
+            of: early,
+            matching: find.byType(AnimatedContainer),
+          ))
+          .duration,
+      Duration.zero,
+    );
+    final progress = find.byType(LinearProgressIndicator);
+    await _reveal(tester, progress, delta: -400);
+    expect(tester.widget<LinearProgressIndicator>(progress).value, 1 / 5);
+    expect(
+      tester
+          .widget<TweenAnimationBuilder<double>>(find.ancestor(
+            of: progress,
+            matching: find.byType(TweenAnimationBuilder<double>),
+          ))
+          .duration,
+      Duration.zero,
+    );
+    final save = find.widgetWithText(AppButton, 'student_quiz.save'.tr());
+    await _reveal(tester, save);
+    await tester.tap(save);
+    await tester.pump();
+    final error = find.text('student_quiz.answer_all_required'.tr());
+    expect(error, findsOneWidget);
+    expect(
+      tester
+          .widget<AnimatedSwitcher>(find.ancestor(
+            of: error,
+            matching: find.byType(AnimatedSwitcher),
+          ))
+          .duration,
+      Duration.zero,
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2));
+    expect(repository.saveCalls, 0);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    expect(tester.binding.transientCallbackCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('wide quiz keeps its lazy form centered within 720px',
+      (tester) async {
+    await _pumpSurface(
+      tester,
+      size: const Size(1280, 960),
+      home: LifestyleQuizPage(
+        userId: _student.id,
+        repository: _PreferencesRepository(),
+      ),
+    );
+    final list = find.byType(ListView);
+    expect(tester.getSize(list).width, 720);
+    expect(tester.getCenter(list).dx, 640);
+    for (final key in ['sleep_title', 'study_title', 'room_title', 'skip']) {
+      await _reveal(tester, find.text('student_quiz.$key'.tr()));
+      expect(tester.takeException(), isNull);
+    }
+  });
 
   testWidgets('discovery shows honest shells and real quiz and account entry',
       (tester) async {
@@ -416,6 +818,7 @@ Future<void> _pumpSurface(
   SessionBloc? session,
   Locale locale = const Locale('en'),
   bool dark = false,
+  bool disableAnimations = false,
   double textScale = 1,
   Size size = const Size(320, 640),
 }) async {
@@ -437,6 +840,7 @@ Future<void> _pumpSurface(
         Widget scale(BuildContext context, Widget? child) => MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 textScaler: TextScaler.linear(textScale),
+                disableAnimations: disableAnimations,
               ),
               child: child!,
             );
@@ -468,6 +872,20 @@ Future<void> _pumpSurface(
       : BlocProvider<SessionBloc>.value(value: session, child: localized));
   await tester.pumpAndSettle();
 }
+
+Future<void> _reveal(WidgetTester tester, Finder finder,
+    {double delta = 400}) async {
+  await tester.scrollUntilVisible(
+    finder,
+    delta,
+    scrollable: find.byType(Scrollable),
+    maxScrolls: 100,
+  );
+  await tester.pumpAndSettle();
+}
+
+LifestyleQuizBloc _quizBloc(WidgetTester tester) =>
+    tester.element(find.byType(ListView)).read<LifestyleQuizBloc>();
 
 GoRouter _router(String initial, {LifestylePreferencesRepository? repository}) {
   final preferences = repository ?? _PreferencesRepository();
@@ -548,32 +966,53 @@ class _RecordingSessionBloc extends Bloc<SessionEvent, SessionState>
 }
 
 class _PreferencesRepository implements LifestylePreferencesRepository {
+  static final serverTime = DateTime.utc(2026, 10, 18, 12);
+
+  LifestyleSnapshot? snapshot;
   LifestylePreferences? saved;
+  LifestyleSnapshot? savedOriginal;
   String? savedUserId;
   Failure? loadFailure;
+  Failure? saveFailure;
   Completer<void>? saveGate;
+  int loadCalls = 0;
   int saveCalls = 0;
 
   @override
-  FutureEither<LifestylePreferences?> getPreferences(
-          {required String userId}) async =>
-      loadFailure == null ? right(saved) : left(loadFailure!);
-
-  @override
-  FutureEither<void> savePreferences({
-    required String userId,
-    required LifestylePreferences preferences,
-  }) async {
-    saveCalls++;
-    await saveGate?.future;
-    saved = preferences;
-    savedUserId = userId;
-    return right(null);
+  FutureEither<LifestyleSnapshot> getPreferences(
+      {required String userId}) async {
+    loadCalls++;
+    if (loadFailure != null) return left(loadFailure!);
+    final preferences = saved ?? const LifestylePreferences();
+    return right(snapshot ??= LifestyleSnapshot(
+      userId: userId,
+      preferences: preferences,
+      answers: LifestyleSnapshot(userId: userId).answersFor(preferences),
+      revision: saved == null ? 0 : 1,
+    ));
   }
 
   @override
-  FutureEither<void> deletePreferences({required String userId}) async {
-    saved = null;
-    return right(null);
+  FutureEither<LifestyleSnapshot> savePreferences({
+    required String userId,
+    required LifestyleSnapshot original,
+    required LifestylePreferences preferences,
+  }) async {
+    saveCalls++;
+    savedOriginal = original;
+    await saveGate?.future;
+    if (saveFailure != null) return left(saveFailure!);
+    saved = preferences.copyWith(
+      completedAt: preferences.isComplete ? serverTime : null,
+      skippedAt: preferences.isSkipped ? serverTime : null,
+    );
+    savedUserId = userId;
+    snapshot = LifestyleSnapshot(
+      userId: userId,
+      preferences: saved!,
+      answers: original.answersFor(preferences),
+      revision: original.revision + 1,
+    );
+    return right(snapshot!);
   }
 }

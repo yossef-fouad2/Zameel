@@ -99,6 +99,8 @@ enum RoomSharingPreference {
 /// Backwards-compatible aliases for generic lifestyle terminology.
 typedef GuestSocialPreference = GuestPreference;
 
+enum LifestyleQuestion { sleep, study, dishes, guests, room }
+
 /// The optional lifestyle answers supplied by a student.
 ///
 /// Every answer is nullable because the quiz is optional and can be saved
@@ -151,6 +153,39 @@ class LifestylePreferences extends Equatable {
 
   /// Alias for [isSkipped].
   bool get skipped => isSkipped;
+
+  bool get hasFinishedOnboarding => isComplete || isSkipped;
+
+  int get answeredCount => [
+        sleepSchedule,
+        studyAtmosphere,
+        dishPolicy,
+        guestPreference,
+        roomSharingPreference,
+      ].whereType<Object>().length;
+
+  bool get hasAllQuizAnswers => answeredCount == 5;
+
+  Enum? answerFor(LifestyleQuestion question) => switch (question) {
+        LifestyleQuestion.sleep => sleepSchedule,
+        LifestyleQuestion.study => studyAtmosphere,
+        LifestyleQuestion.dishes => dishPolicy,
+        LifestyleQuestion.guests => guestPreference,
+        LifestyleQuestion.room => roomSharingPreference,
+      };
+
+  LifestylePreferences withAnswer(LifestyleQuestion question, Enum? value) =>
+      switch (question) {
+        LifestyleQuestion.sleep =>
+          copyWith(sleepSchedule: value as SleepSchedule?),
+        LifestyleQuestion.study =>
+          copyWith(studyAtmosphere: value as StudyAtmosphere?),
+        LifestyleQuestion.dishes => copyWith(dishPolicy: value as DishPolicy?),
+        LifestyleQuestion.guests =>
+          copyWith(guestPreference: value as GuestPreference?),
+        LifestyleQuestion.room =>
+          copyWith(roomSharingPreference: value as RoomSharingPreference?),
+      };
 
   Map<String, dynamic> toJson() => {
         'version': currentVersion,

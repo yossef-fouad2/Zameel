@@ -7,13 +7,21 @@ class AppUser extends Equatable {
   final String? name;
   final String? photoUrl;
   final UserRole? role;
+  final String? phone;
+  final String? avatarPath;
+  final String preferredLanguage;
+  final DateTime? updatedAt;
 
   const AppUser(
       {required this.id,
       required this.email,
       this.name,
       this.photoUrl,
-      this.role});
+      this.role,
+      this.phone,
+      this.avatarPath,
+      this.preferredLanguage = 'en',
+      this.updatedAt});
 
   factory AppUser.empty() => const AppUser(id: '', email: '');
 
@@ -37,6 +45,10 @@ class AppUser extends Equatable {
       name: profile['full_name'] as String?,
       photoUrl: profile['avatar_url'] as String?,
       role: role,
+      phone: profile['phone'] as String?,
+      avatarPath: profile['avatar_path'] as String?,
+      preferredLanguage: profile['preferred_language'] == 'ar' ? 'ar' : 'en',
+      updatedAt: DateTime.tryParse(profile['updated_at'] as String? ?? ''),
     );
   }
 
@@ -44,5 +56,15 @@ class AppUser extends Equatable {
   bool get isNotEmpty => id.isNotEmpty;
 
   @override
-  List<Object?> get props => [id, email, name, photoUrl, role];
+  List<Object?> get props => [
+        id,
+        email,
+        name,
+        photoUrl,
+        role,
+        phone,
+        avatarPath,
+        preferredLanguage,
+        updatedAt
+      ];
 }

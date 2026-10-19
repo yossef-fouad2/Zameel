@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fpdart/fpdart.dart';
 
 import '../../../data/models/auth_result.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/models/user_role.dart';
-import '../../../data/models/lifestyle_preferences.dart';
+import '../../../data/models/lifestyle_snapshot.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/lifestyle_preferences_repository.dart';
+import '../../../utils/failure.dart';
 
 sealed class SessionEvent {
   const SessionEvent();
@@ -27,6 +29,18 @@ class SessionRecoveryCompleted extends SessionEvent {
 
 class SessionOnboardingSkipRequested extends SessionEvent {
   const SessionOnboardingSkipRequested();
+}
+
+/// A confirmed questionnaire save updates routing without reloading the account.
+class SessionPreferencesUpdated extends SessionEvent {
+  const SessionPreferencesUpdated(this.snapshot);
+  final LifestyleSnapshot snapshot;
+}
+
+/// A canonical profile returned by the protected repository after load/save.
+class SessionProfileUpdated extends SessionEvent {
+  const SessionProfileUpdated(this.user);
+  final AppUser user;
 }
 
 class _SessionChanged extends SessionEvent {
@@ -101,45 +115,103 @@ class SessionBloc extends Bloc<SessionEvent, SessionState> {
   late final StreamSubscription<AuthSessionChange> _authSub;
   int _revision = 0;
   bool _recovering = false;
+  LifestyleSnapshot? _preferencesSnapshot;
 
   Future<void> _onEvent(SessionEvent event, Emitter<SessionState> emit) async {
+    if (event is SessionPreferencesUpdated) {
+      final snapshot = event.snapshot;
+      if (state.status != SessionStatus.authenticated ||
+          state.isSigningOut ||
+          state.user?.role != UserRole.student ||
+          state.user?.id != snapshot.userId ||
+          snapshot.isLocalDraft ||
+          snapshot.revision < (_preferencesSnapshot?.revision ?? 0)) {
+        return;
+      }
+      _preferencesSnapshot = snapshot;
+      emit(SessionState(
+          status: state.status,
+          user: state.user,
+          hasCompletedOnboarding: snapshot.preferences.hasFinishedOnboarding));
+      return;
+    }
+    if (event is SessionProfileUpdated) {
+      final current = state.user;
+      if (state.status != SessionStatus.authenticated ||
+          state.isSigningOut ||
+          event.user.role == null ||
+          event.user.id != current?.id ||
+          event.user == current) {
+        return;
+      }
+      // A discarded editor or delayed load must not replace a newer session profile.
+      if (current?.updatedAt != null &&
+          (event.user.updatedAt == null ||
+              event.user.updatedAt!.isBefore(current!.updatedAt!))) {
+        return;
+      }
+      _revision++;
+      emit(SessionState(
+          status: state.status,
+          user: event.user,
+          hasCompletedOnboarding: state.hasCompletedOnboarding));
+      return;
+    }
     if (event is SessionOnboardingSkipRequested) {
       final user = state.user;
       final repository = _preferencesRepository;
       if (user?.role != UserRole.student ||
           repository == null ||
+          state.status != SessionStatus.authenticated ||
+          state.isSigningOut ||
           state.isUpdatingOnboarding) {
         return;
       }
       final revision = ++_revision;
       emit(SessionState(
           status: state.status, user: user, isUpdatingOnboarding: true));
-      final previous = await repository.getPreferences(userId: user!.id);
+      final cached = _preferencesSnapshot;
+      final previous = cached != null && cached.userId == user!.id
+          ? right<Failure, LifestyleSnapshot>(cached)
+          : await repository.getPreferences(userId: user!.id);
+      if (revision != _revision || emit.isDone) return;
       final result = await previous.fold(
-        (failure) async => previous.map<void>((_) {}),
-        (saved) => repository.savePreferences(
-          userId: user.id,
-          preferences: (saved ?? const LifestylePreferences()).copyWith(
-            isSkipped: true,
-            skippedAt: DateTime.now().toUtc(),
-          ),
-        ),
+        (failure) async => previous,
+        (saved) => saved.isLocalDraft
+            ? Future.value(left<Failure, LifestyleSnapshot>(
+                const CacheFailure('student_quiz.review_local')))
+            : repository.savePreferences(
+                userId: user.id,
+                original: saved,
+                preferences: saved.preferences.copyWith(
+                  isComplete: false,
+                  completedAt: null,
+                  isSkipped: true,
+                ),
+              ),
       );
       if (revision != _revision || emit.isDone) return;
       result.fold(
-        (_) => emit(SessionState(
-            status: SessionStatus.authenticated,
-            user: user,
-            errorMessage: 'auth_flow.preferences_failed')),
-        (_) => emit(SessionState(
-            status: SessionStatus.authenticated,
-            user: user,
-            hasCompletedOnboarding: true)),
+        (failure) {
+          _preferencesSnapshot = null;
+          emit(SessionState(
+              status: SessionStatus.authenticated,
+              user: user,
+              errorMessage: failure.message));
+        },
+        (saved) {
+          _preferencesSnapshot = saved;
+          emit(SessionState(
+              status: SessionStatus.authenticated,
+              user: user,
+              hasCompletedOnboarding: saved.preferences.hasFinishedOnboarding));
+        },
       );
       return;
     }
     if (event is SessionLogoutRequested) {
       if (state.isSigningOut) return;
+      _revision++;
       emit(SessionState(
           status: state.status,
           user: state.user,
@@ -156,6 +228,7 @@ class SessionBloc extends Bloc<SessionEvent, SessionState> {
         (_) {
           _revision++;
           _recovering = false;
+          _preferencesSnapshot = null;
           emit(const SessionState.unauthenticated());
         },
       );
@@ -172,6 +245,7 @@ class SessionBloc extends Bloc<SessionEvent, SessionState> {
       if (event.change == AuthSessionChange.signedOut) {
         _revision++;
         _recovering = false;
+        _preferencesSnapshot = null;
         emit(const SessionState.unauthenticated());
         return;
       }
@@ -197,6 +271,7 @@ class SessionBloc extends Bloc<SessionEvent, SessionState> {
           status: SessionStatus.failure, errorMessage: failure.message)),
       (user) async {
         if (user == null) {
+          _preferencesSnapshot = null;
           emit(const SessionState.unauthenticated());
         } else if (user.role == null) {
           emit(const SessionState(
@@ -207,10 +282,33 @@ class SessionBloc extends Bloc<SessionEvent, SessionState> {
           if (user.role == UserRole.student && _preferencesRepository != null) {
             final preferences =
                 await _preferencesRepository.getPreferences(userId: user.id);
-            completed = preferences.fold(
-                (_) => false,
-                (value) =>
-                    value != null && (value.isComplete || value.isSkipped));
+            if (revision != _revision || emit.isDone) return;
+            final failure = preferences.fold((failure) => failure, (_) => null);
+            if (failure != null) {
+              final cached = _preferencesSnapshot;
+              final keepSession = state.status == SessionStatus.authenticated &&
+                  state.user?.id == user.id &&
+                  cached?.userId == user.id;
+              emit(SessionState(
+                  // A transient optional-data refresh must not tear down an
+                  // authenticated editor and discard its in-memory selections.
+                  status: keepSession
+                      ? SessionStatus.authenticated
+                      : SessionStatus.failure,
+                  user: user,
+                  hasCompletedOnboarding:
+                      keepSession && cached!.preferences.hasFinishedOnboarding,
+                  errorMessage: failure.message));
+              return;
+            }
+            var snapshot = preferences.getOrElse((failure) => throw failure);
+            final cached = _preferencesSnapshot;
+            if (cached?.userId == user.id &&
+                cached!.revision > snapshot.revision) {
+              snapshot = cached;
+            }
+            _preferencesSnapshot = snapshot;
+            completed = snapshot.preferences.hasFinishedOnboarding;
           }
           if (revision != _revision || emit.isDone) return;
           emit(SessionState(

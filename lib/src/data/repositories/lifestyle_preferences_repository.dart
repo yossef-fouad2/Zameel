@@ -1,15 +1,15 @@
 import 'package:zameel/src/data/models/lifestyle_preferences.dart';
+import 'package:zameel/src/data/models/lifestyle_snapshot.dart';
 import 'package:zameel/src/utils/utils.dart';
 
 abstract class LifestylePreferencesRepository {
-  FutureEither<LifestylePreferences?> getPreferences({
+  FutureEither<LifestyleSnapshot> getPreferences({
     required String userId,
   });
 
-  FutureEither<void> savePreferences({
+  FutureEither<LifestyleSnapshot> savePreferences({
     required String userId,
+    required LifestyleSnapshot original,
     required LifestylePreferences preferences,
   });
-
-  FutureEither<void> deletePreferences({required String userId});
 }

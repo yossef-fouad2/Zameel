@@ -395,6 +395,41 @@ Getters (sync): `getString/getBool/getInt/getDouble/getStringList`. Plus `contai
 
 ## 8. Utils — `lib/src/utils/`
 
+### Profile Flow
+
+The milestone 4 implementation is split into reusable pieces rather than embedding backend logic in the account page:
+
+| Component | Location | Purpose |
+|---|---|---|
+| `ProfileDraft` | `data/models/profile_draft.dart` | Name/phone/language validation and whitelisted update data; no role/email writes. |
+| `ProfileRepository` / `ProfileRepositoryImpl` | `data/repositories/` | Typed profile reads, avatar selection/signing, and saves. Injected by `StateWrapper`. |
+| `ProfileService.instance` | `services/profile_service.dart` | Protected Supabase updates, timestamp conflict detection, versioned uploads, signed URLs and safe cleanup. |
+| `MediaService.pickAvatar()` / `prepareAvatar()` | `services/media_service.dart` | System gallery selection and asynchronous bounded PNG normalization; no new imaging package. |
+| `ProfileCubit` | `ui/profile/profile_cubit.dart` | Draft/dirty state, load/save/picker feedback, discard, and non-blocking avatar errors. |
+| `ProfileAvatar` | `shared/widgets/profile_avatar.dart` | Cached circular image or initials, staged preview, bounded decoding, reduced-motion fade. |
+| `appTransitionPage` | `routing/app_transition_page.dart` | Shared short detail-page transition, native iOS behavior and reduced-motion fallback. |
+
+Use `context.pushNamed('account')` to open the editor. `SessionProfileUpdated` receives the canonical saved profile without another full app reload. Persist object paths, never signed URLs. Apply SQL migration `003_profile_avatars.sql` before this app version; see SETUP.md for the upgrade sequence and live checks.
+
+### Lifestyle Preference Sync
+
+Milestone 4.5 uses the existing normalized answer table with an atomic, versioned cloud contract:
+
+| Component | Location | Purpose |
+|---|---|---|
+| `LifestylePreferences` / `LifestyleQuestion` | `data/models/lifestyle_preferences.dart` | Nullable typed answers, per-question updates and progress; completion/skip are separate from answers. |
+| `LifestyleSnapshot` / `LifestyleAnswer` | `data/models/lifestyle_snapshot.dart` | Account/revision snapshot; preserves both habit/preference kinds and unedited intensities. |
+| `LifestylePreferencesService` | `services/lifestyle_preferences_service.dart` | Owner-checked get/save RPCs, canonical server timestamps and safe localized failures. |
+| `LifestylePreferencesRepositoryImpl` | `data/repositories/lifestyle_preferences_repository_impl.dart` | Fresh cloud reads with in-flight deduplication; stages version-1 device-only data without automatically uploading it. |
+| `LifestyleQuizBloc` | `ui/student/lifestyle_quiz/lifestyle_quiz_bloc.dart` | Immediate per-question changes, dirty state, explicit save/skip, duplicate-write protection and conflict reload. |
+| `SessionPreferencesUpdated` | `ui/auth/bloc/session_bloc.dart` | Applies a confirmed snapshot to onboarding routing without fetching the profile again. |
+
+Read with `getPreferences(userId: ...)`; pass that `LifestyleSnapshot` as `original` to `savePreferences(userId: ..., original: ..., preferences: ...)`. Never construct a new revision to bypass a conflict. Empty answers remain absent rows. The current five-question editor retains other stored answer kinds rather than conflating or deleting them.
+
+Selections do not trigger network/storage writes. The quiz lazily builds cards and selects only each card's answer/busy state; progress and option transitions honor reduced motion. Both toolbar and system Back protect unsaved selections. Use the named `lifestyleQuiz` route and shared `appTransitionPage`.
+
+Apply `005_lifestyle_sync.sql` before this app version. The RPC saves all answers and completion/skip metadata together; direct answer writes are deliberately revoked. Old device-only answers are shown for review only when the cloud has no saved revision, and are uploaded only by an explicit quiz save/skip. Confirmed imports retire that account's local copy; failures leave it untouched. See SETUP.md for deployment and privacy checks.
+
 | Thing | File | Usage |
 |-------|------|-------|
 | `AppLogger` | `logger.dart` | `AppLogger.info/success/warning/error(msg[, err, stack])` (debug-only). Globals: `logInfo`, `logSuccess`, `logWarning`, `logError`. |

@@ -70,6 +70,24 @@ Do not invent new global radius or spacing names for one screen. Keep component-
 - `StatusBadge`: use a truthful domain state, localized label, icon and semantic colors together. It expands for longer/scaled text.
 - `KinshipBrandMark`, `KinshipPill`: reuse the design's branding treatment/chips without hardcoded unlocalized campus text or fake verification badges.
 - `AuthFeedback`: UI listener for auth failures/success feedback. Blocs do not receive `BuildContext`, show toasts, or navigate.
+- `ProfileAvatar`: bounded circular image/initials with a stable object-path cache key. It decodes near the display size (maximum 512 pixels), retains a local preview while saving, and disables its fade for reduced motion.
+
+## Profile Performance
+
+- The account editor uses `ProfileCubit` and a typed repository. Name/phone keystrokes update local draft state, not Supabase. Bloc selectors keep the header and action bar from rebuilding for every character.
+- Photo processing is asynchronous through the existing native image codec. Images are downscaled before display/upload; do not keep full camera-resolution bitmaps in widgets.
+- `appTransitionPage` adds a short fade/slide to detail routes, keeps native iOS navigation, and returns a no-transition page when reduced motion is requested. Reuse it rather than adding page-specific controllers.
+- Save feedback is a small `AnimatedSwitcher`, not an always-running background animation. The save bar stays in place, edits are preserved on failures, and Back asks before discarding changes.
+- Responsive header and scrollable photo sheet support Arabic and larger text. Tests cover request counts, real font layout, and reduced-motion selection; device frame-rate profiling is still needed before making FPS claims.
+
+## Quiz Performance
+
+- Lifestyle choices update `LifestyleQuizBloc` immediately; only explicit Save or Skip makes a cloud write. One RPC saves the complete questionnaire and its onboarding metadata atomically. Concurrent readers share an in-flight request, not an indefinitely stale cache.
+- The quiz uses a lazy list capped at 720 logical pixels. Per-question selectors isolate answer changes from unrelated cards; typed question events merge against current state even when taps arrive before the next frame.
+- Use short color/progress transitions with `AppDurations` / `AppCurves`. Reduced motion disables option, progress and feedback animation, and the route reuses `appTransitionPage`. No background loops, blurs, entry-animation cascades or extra animation package are needed.
+- Keep option borders the same width in either state to avoid layout movement. Text wraps, answers can be cleared, and scrollable content supports Arabic and enlarged text. Explicit cloud/device-only/unsaved copy must reflect the actual state.
+- Busy controls prevent duplicate saves. Toolbar and system Back share a discard guard. Conflicts and uncertain responses preserve the draft and require an explicit reload before another write. A confirmed save updates the session without a full account reload.
+- Request counts, reduced-motion behavior and widget rebuild isolation are testable locally. Hardware smoothness still needs a profile-mode run on target devices; do not equate widget tests with an FPS measurement.
 
 ## New Page Pattern
 

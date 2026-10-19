@@ -98,7 +98,8 @@ class AuthService {
         if (session == null) return null;
         final profile = await _supabase
             .from('profiles')
-            .select('id, role, full_name, avatar_url')
+            .select(
+                'id, role, full_name, avatar_url, phone, preferred_language, updated_at, avatar_path')
             .eq('id', session.user.id)
             .maybeSingle();
         if (profile == null) {

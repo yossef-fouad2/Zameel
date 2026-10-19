@@ -28,180 +28,268 @@ class LifestyleQuizPage extends StatelessWidget {
   }
 }
 
-class _LifestyleQuizView extends StatelessWidget {
+class _LifestyleQuizView extends StatefulWidget {
   const _LifestyleQuizView();
 
   @override
+  State<_LifestyleQuizView> createState() => _LifestyleQuizViewState();
+}
+
+class _LifestyleQuizViewState extends State<_LifestyleQuizView> {
+  bool _askingToLeave = false;
+  bool _allowPop = false;
+
+  Future<bool> _confirmDiscard() async {
+    final state = context.read<LifestyleQuizBloc>().state;
+    if (state.isSaving || _askingToLeave) return false;
+    if (!state.isDirty) return true;
+    _askingToLeave = true;
+    final discard = await context.showAppDialog<bool>(
+      builder: (dialogContext) => AlertDialog(
+        title: Text('student_quiz.discard_title'.tr()),
+        content: Text('student_quiz.discard_body'.tr()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text('profile.keep_editing'.tr()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text('profile.discard'.tr()),
+          ),
+        ],
+      ),
+    );
+    _askingToLeave = false;
+    return mounted && (discard ?? false);
+  }
+
+  Future<void> _reload() async {
+    if (await _confirmDiscard() && mounted) {
+      context
+          .read<LifestyleQuizBloc>()
+          .add(const LifestyleQuizStarted(discardChanges: true));
+    }
+  }
+
+  Future<void> _goBack() async {
+    if (_allowPop || !await _confirmDiscard() || !mounted) return;
+    setState(() => _allowPop = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final router = GoRouter.maybeOf(context);
+    if (router != null && router.canPop()) {
+      router.pop();
+    } else if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return BlocConsumer<LifestyleQuizBloc, LifestyleQuizState>(
-      listenWhen: (previous, current) {
-        return previous.isSaving &&
-            !current.isSaving &&
-            current.errorMessage == null;
-      },
+    final (loadStatus, isSaving, isDirty) = context.select(
+      (LifestyleQuizBloc bloc) =>
+          (bloc.state.loadStatus, bloc.state.isSaving, bloc.state.isDirty),
+    );
+    return BlocListener<LifestyleQuizBloc, LifestyleQuizState>(
+      listenWhen: (previous, current) =>
+          previous.savedCount != current.savedCount,
       listener: (context, state) {
-        context.read<SessionBloc>().add(const SessionCheckRequested());
-        context.goNamed('discovery');
+        final session = context.read<SessionBloc>();
+        if (session.state.status != SessionStatus.authenticated ||
+            session.state.user?.id != state.snapshot?.userId) {
+          return;
+        }
+        session.add(SessionPreferencesUpdated(state.snapshot!));
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.goNamed('discovery');
+        }
       },
-      builder: (context, state) {
-        return Scaffold(
+      child: PopScope(
+        canPop: _allowPop || (!isDirty && !isSaving),
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) _goBack();
+        },
+        child: Scaffold(
           appBar: AppTopBar(
             title: '',
+            onPressed: (GoRouter.maybeOf(context)?.canPop() ??
+                    Navigator.of(context).canPop())
+                ? _goBack
+                : null,
             centerTitle: false,
             titleWidget: const KinshipBrandMark(compact: true),
             actions: [
               IconButton(
                 tooltip: 'student_onboarding.profile'.tr(),
-                onPressed: state.isSaving
-                    ? null
-                    : () => context.push(AppRoutes.account),
+                onPressed: isSaving ? null : () => context.pushNamed('account'),
                 icon: const Icon(Icons.account_circle_outlined),
               ),
             ],
           ),
           body: SafeArea(
-            child: switch (state.loadStatus) {
-              AppStatus.initial || AppStatus.loading => Center(
-                  child: Semantics(
-                    label: 'student_quiz.loading'.tr(),
-                    child: const AppLoading(),
-                  ),
-                ),
-              AppStatus.failure => SingleChildScrollView(
-                  child: AppEmptyState(
-                    icon: Icons.error_outline,
-                    title: 'student_quiz.load_error_title'.tr(),
-                    subtitle: 'student_quiz.load_error_body'.tr(),
-                    actionLabel: 'student_quiz.retry'.tr(),
-                    onAction: () => context
-                        .read<LifestyleQuizBloc>()
-                        .add(const LifestyleQuizStarted()),
-                  ),
-                ),
-              _ => ListView(
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.pagePadding,
-                    AppSpacing.xs,
-                    AppSpacing.pagePadding,
-                    AppSpacing.xl,
-                  ),
-                  children: [
-                    _QuizHeader(
-                      answeredCount: _answeredCount(state.preferences),
-                      isSaving: state.isSaving,
-                    ),
-                    SizedBox(height: AppSpacing.lg),
-                    _AnswerProgress(
-                      answeredCount: _answeredCount(state.preferences),
-                    ),
-                    SizedBox(height: AppSpacing.lg),
-                    for (final question in _quizQuestions) ...[
-                      _QuizQuestionCard(
-                        question: question,
-                        preferences: state.preferences,
-                        onSelected: state.isSaving
-                            ? null
-                            : (value) => context.read<LifestyleQuizBloc>().add(
-                                  LifestylePreferencesChanged(
-                                    question.setValue(state.preferences, value),
-                                  ),
-                                ),
-                      ),
-                      SizedBox(height: AppSpacing.md),
-                    ],
-                    Container(
-                      padding: EdgeInsets.all(AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: context.colors.surfaceContainerHigh
-                            .withValues(alpha: .5),
-                        borderRadius: AppBorders.card,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.phone_android_outlined,
-                              color: context.colors.primary, size: 22.sp),
-                          SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              'student_quiz.privacy_notice'.tr(),
-                              style: context.textTheme.bodySmall?.copyWith(
-                                color: context.colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: switch (loadStatus) {
+                  AppStatus.initial || AppStatus.loading => Center(
+                      child: Semantics(
+                        label: 'student_quiz.loading'.tr(),
+                        child: const AppLoading(),
                       ),
                     ),
-                    SizedBox(height: AppSpacing.lg),
-                    if (state.errorMessage != null) ...[
-                      Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          _localizedMessage(state.errorMessage!),
-                          style: context.textTheme.bodyMedium?.copyWith(
-                            color: context.colors.error,
-                          ),
-                        ),
+                  AppStatus.failure => SingleChildScrollView(
+                      child: AppEmptyState(
+                        icon: Icons.error_outline,
+                        title: 'student_quiz.load_error_title'.tr(),
+                        subtitle: '${'student_quiz.load_error_body'.tr()}\n\n'
+                            '${_localizedMessage(context.read<LifestyleQuizBloc>().state.errorMessage)}',
+                        actionLabel: 'student_quiz.retry'.tr(),
+                        onAction: () => context
+                            .read<LifestyleQuizBloc>()
+                            .add(const LifestyleQuizStarted()),
                       ),
-                      SizedBox(height: AppSpacing.sm),
-                    ],
-                    AppButton(
-                      label: 'student_quiz.save'.tr(),
-                      onPressed: state.isSaving
-                          ? null
-                          : () => context
-                              .read<LifestyleQuizBloc>()
-                              .add(const LifestylePreferencesSaveRequested()),
-                      isLoading: state.isSaving,
-                      isFullWidth: true,
-                      height: ButtonSize.large,
-                      suffixIcon: const Icon(Icons.arrow_forward),
                     ),
-                    SizedBox(height: AppSpacing.sm),
-                    TextButton(
-                      onPressed: state.isSaving
-                          ? null
-                          : () => context
-                              .read<LifestyleQuizBloc>()
-                              .add(const LifestylePreferencesSkipRequested()),
-                      child: Text('student_quiz.skip'.tr()),
+                  _ => ListView.builder(
+                      key: const PageStorageKey('lifestyle-quiz'),
+                      padding: EdgeInsets.fromLTRB(
+                        AppSpacing.pagePadding,
+                        AppSpacing.xs,
+                        AppSpacing.pagePadding,
+                        AppSpacing.xl,
+                      ),
+                      itemCount: _quizQuestions.length + 3,
+                      itemBuilder: (context, index) => Padding(
+                        padding: EdgeInsets.only(bottom: AppSpacing.md),
+                        child: switch (index) {
+                          0 => const _QuizHeader(),
+                          1 => const _AnswerProgress(),
+                          _ when index < _quizQuestions.length + 2 =>
+                            _QuizQuestionCard(
+                                question: _quizQuestions[index - 2]),
+                          _ => _QuizActions(onReload: _reload),
+                        },
+                      ),
                     ),
-                  ],
-                ),
-            },
+                },
+              ),
+            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
+}
 
-  static int _answeredCount(LifestylePreferences preferences) {
-    return [
-      preferences.sleepSchedule,
-      preferences.studyAtmosphere,
-      preferences.dishPolicy,
-      preferences.guestPreference,
-      preferences.roomSharingPreference,
-    ].whereType<Object>().length;
-  }
-
-  static String _localizedMessage(String message) {
-    return message.startsWith('student_quiz.')
+String _localizedMessage(String? message) =>
+    message != null && message.startsWith('student_quiz.')
         ? message.tr()
         : 'student_quiz.save_error'.tr();
+
+class _QuizActions extends StatelessWidget {
+  const _QuizActions({required this.onReload});
+  final VoidCallback onReload;
+
+  @override
+  Widget build(BuildContext context) {
+    final (saving, error, needsReload) = context.select(
+      (LifestyleQuizBloc bloc) => (
+        bloc.state.isSaving,
+        bloc.state.errorMessage,
+        bloc.state.needsReload
+      ),
+    );
+    final bloc = context.read<LifestyleQuizBloc>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppCard(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.lock_outline, color: context.colors.primary, size: 22),
+              SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text('student_quiz.privacy_notice'.tr(),
+                    style: context.textTheme.bodySmall
+                        ?.copyWith(color: context.colors.onSurfaceVariant)),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: AppSpacing.md),
+        AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : AppDurations.fast,
+          child: error == null
+              ? const SizedBox.shrink()
+              : Semantics(
+                  key: ValueKey(error),
+                  liveRegion: true,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: Text(_localizedMessage(error),
+                        style: context.textTheme.bodyMedium
+                            ?.copyWith(color: context.colors.error)),
+                  ),
+                ),
+        ),
+        if (needsReload) ...[
+          AppButton(
+            label: 'student_quiz.reload'.tr(),
+            variant: ButtonVariant.outline,
+            onPressed: onReload,
+          ),
+          SizedBox(height: AppSpacing.sm),
+        ],
+        AppButton(
+          label: 'student_quiz.save'.tr(),
+          onPressed: saving || needsReload
+              ? null
+              : () => bloc.add(const LifestylePreferencesSaveRequested()),
+          isLoading: saving,
+          isFullWidth: true,
+          height: ButtonSize.large,
+          suffixIcon: const Icon(Icons.arrow_forward),
+        ),
+        SizedBox(height: AppSpacing.sm),
+        TextButton(
+          onPressed: saving || needsReload
+              ? null
+              : () => bloc.add(const LifestylePreferencesSkipRequested()),
+          child: Text('student_quiz.skip'.tr()),
+        ),
+      ],
+    );
   }
 }
 
 class _QuizHeader extends StatelessWidget {
-  const _QuizHeader({required this.answeredCount, required this.isSaving});
-
-  final int answeredCount;
-  final bool isSaving;
+  const _QuizHeader();
 
   @override
   Widget build(BuildContext context) {
+    final (answeredCount, isSaving, needsImport, isDirty, revision) =
+        context.select(
+      (LifestyleQuizBloc bloc) => (
+        bloc.state.preferences.answeredCount,
+        bloc.state.isSaving,
+        bloc.state.needsImport,
+        bloc.state.isDirty,
+        bloc.state.snapshot?.revision ?? 0,
+      ),
+    );
     final colors = context.colors;
+    final status = needsImport
+        ? 'student_quiz.local_draft'
+        : isDirty
+            ? 'student_quiz.unsaved'
+            : revision == 0
+                ? 'student_quiz.cloud_ready'
+                : 'student_quiz.cloud_saved';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -218,21 +306,30 @@ class _QuizHeader extends StatelessWidget {
               foregroundColor: colors.onTertiaryContainer,
             ),
             KinshipPill(
-              label: 'student_quiz.local_only'.tr(),
-              icon: Icons.phone_android_outlined,
+              label: status.tr(),
+              icon: needsImport || isDirty
+                  ? Icons.edit_outlined
+                  : Icons.cloud_outlined,
             ),
           ],
         ),
         SizedBox(height: AppSpacing.sm),
         ClipRRect(
           borderRadius: AppBorders.full,
-          child: LinearProgressIndicator(
-            value: answeredCount / _quizQuestions.length,
-            semanticsLabel: 'student_quiz.answered_semantics'
-                .tr(args: ['$answeredCount', '${_quizQuestions.length}']),
-            minHeight: 6.h,
-            backgroundColor: colors.surfaceContainerHigh,
-            color: colors.primary,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: answeredCount / _quizQuestions.length),
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : AppDurations.quick,
+            curve: AppCurves.smooth,
+            builder: (context, value, _) => LinearProgressIndicator(
+              value: value,
+              semanticsLabel: 'student_quiz.answered_semantics'
+                  .tr(args: ['$answeredCount', '${_quizQuestions.length}']),
+              minHeight: 6,
+              backgroundColor: colors.surfaceContainerHigh,
+              color: colors.primary,
+            ),
           ),
         ),
         SizedBox(height: AppSpacing.md),
@@ -250,6 +347,12 @@ class _QuizHeader extends StatelessWidget {
             color: colors.onSurfaceVariant,
           ),
         ),
+        if (needsImport) ...[
+          SizedBox(height: AppSpacing.sm),
+          Text('student_quiz.import_notice'.tr(),
+              style: context.textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurface, fontWeight: FontWeight.w600)),
+        ],
         if (isSaving) ...[
           SizedBox(height: AppSpacing.sm),
           Semantics(
@@ -269,12 +372,12 @@ class _QuizHeader extends StatelessWidget {
 }
 
 class _AnswerProgress extends StatelessWidget {
-  const _AnswerProgress({required this.answeredCount});
-
-  final int answeredCount;
+  const _AnswerProgress();
 
   @override
   Widget build(BuildContext context) {
+    final answeredCount = context.select(
+        (LifestyleQuizBloc bloc) => bloc.state.preferences.answeredCount);
     final colors = context.colors;
     return Container(
       padding: EdgeInsets.all(AppSpacing.md),
@@ -286,14 +389,14 @@ class _AnswerProgress extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 48.w,
-            height: 48.w,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
               color: context.appColors.successContainer,
               borderRadius: AppBorders.input,
             ),
             child: Icon(Icons.diversity_1,
-                color: context.appColors.onSuccessContainer, size: 25.sp),
+                color: context.appColors.onSuccessContainer, size: 25),
           ),
           SizedBox(width: AppSpacing.md),
           Expanded(
@@ -340,16 +443,17 @@ class _AnswerProgress extends StatelessWidget {
 class _QuizQuestionCard extends StatelessWidget {
   const _QuizQuestionCard({
     required this.question,
-    required this.preferences,
-    required this.onSelected,
   });
 
   final _QuizQuestion question;
-  final LifestylePreferences preferences;
-  final ValueChanged<Object>? onSelected;
 
   @override
   Widget build(BuildContext context) {
+    final (selected, saving) = context.select(
+      (LifestyleQuizBloc bloc) =>
+          (bloc.state.preferences.answerFor(question.id), bloc.state.isSaving),
+    );
+    final bloc = context.read<LifestyleQuizBloc>();
     return AppCard(
       padding: EdgeInsets.all(AppSpacing.md),
       child: Column(
@@ -358,14 +462,14 @@ class _QuizQuestionCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 34.w,
-                height: 34.w,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: context.colors.surfaceContainer,
                   borderRadius: AppBorders.input,
                 ),
                 child: Icon(question.icon,
-                    size: 19.sp, color: context.colors.primary),
+                    size: 19, color: context.colors.primary),
               ),
               SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -401,14 +505,26 @@ class _QuizQuestionCard extends StatelessWidget {
           SizedBox(height: AppSpacing.sm),
           for (final option in question.options) ...[
             _QuizOptionTile(
+              key: ValueKey('quiz.${question.id.name}.${option.value.name}'),
               option: option,
-              selected: question.getValue(preferences) == option.value,
-              onTap:
-                  onSelected == null ? null : () => onSelected!(option.value),
+              selected: selected == option.value,
+              onTap: saving
+                  ? null
+                  : () => bloc
+                      .add(LifestyleAnswerChanged(question.id, option.value)),
             ),
             if (option != question.options.last)
               SizedBox(height: AppSpacing.sm),
           ],
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton(
+              onPressed: saving || selected == null
+                  ? null
+                  : () => bloc.add(LifestyleAnswerChanged(question.id, null)),
+              child: Text('student_quiz.clear_answer'.tr()),
+            ),
+          ),
         ],
       ),
     );
@@ -417,6 +533,7 @@ class _QuizQuestionCard extends StatelessWidget {
 
 class _QuizOptionTile extends StatelessWidget {
   const _QuizOptionTile({
+    super.key,
     required this.option,
     required this.selected,
     required this.onTap,
@@ -441,7 +558,10 @@ class _QuizOptionTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: AppBorders.input,
         child: AnimatedContainer(
-          duration: AppDurations.fast,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : AppDurations.fast,
+          curve: AppCurves.smooth,
           constraints: BoxConstraints(minHeight: 58.h),
           padding: EdgeInsets.symmetric(
             horizontal: AppSpacing.md,
@@ -452,13 +572,12 @@ class _QuizOptionTile extends StatelessWidget {
             borderRadius: AppBorders.input,
             border: Border.all(
               color: selected ? colors.primary : colors.outlineVariant,
-              width: selected ? 1.5 : 1,
+              width: 1.5,
             ),
-            boxShadow: selected ? AppShadows.subtle : AppShadows.none,
           ),
           child: Row(
             children: [
-              Icon(option.icon, size: 21.sp, color: secondary),
+              Icon(option.icon, size: 21, color: secondary),
               SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
@@ -483,7 +602,7 @@ class _QuizOptionTile extends StatelessWidget {
               ),
               Icon(
                 selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                size: 21.sp,
+                size: 21,
                 color: selected ? colors.onPrimary : colors.outline,
               ),
             ],
@@ -496,25 +615,20 @@ class _QuizOptionTile extends StatelessWidget {
 
 class _QuizQuestion {
   const _QuizQuestion({
+    required this.id,
     required this.category,
     required this.title,
     required this.prompt,
     required this.icon,
     required this.options,
-    required this.getValue,
-    required this.setValue,
   });
 
+  final LifestyleQuestion id;
   final String category;
   final String title;
   final String prompt;
   final IconData icon;
   final List<_QuizOption> options;
-  final Object? Function(LifestylePreferences preferences) getValue;
-  final LifestylePreferences Function(
-    LifestylePreferences preferences,
-    Object value,
-  ) setValue;
 }
 
 class _QuizOption {
@@ -525,158 +639,134 @@ class _QuizOption {
     this.detail,
   });
 
-  final Object value;
+  final Enum value;
   final String label;
   final String? detail;
   final IconData icon;
 }
 
-final List<_QuizQuestion> _quizQuestions = [
+const List<_QuizQuestion> _quizQuestions = [
   _QuizQuestion(
+    id: LifestyleQuestion.sleep,
     category: 'student_quiz.category_1',
     title: 'student_quiz.sleep_title',
     prompt: 'student_quiz.sleep_prompt',
     icon: Icons.bedtime_outlined,
     options: [
-      const _QuizOption(
+      _QuizOption(
         value: SleepSchedule.earlyBird,
         label: 'student_quiz.sleep_early',
         detail: 'student_quiz.sleep_early_detail',
         icon: Icons.wb_sunny_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: SleepSchedule.average,
         label: 'student_quiz.sleep_average',
         detail: 'student_quiz.sleep_average_detail',
         icon: Icons.schedule_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: SleepSchedule.nightOwl,
         label: 'student_quiz.sleep_night',
         detail: 'student_quiz.sleep_night_detail',
         icon: Icons.nights_stay_outlined,
       ),
     ],
-    getValue: (preferences) => preferences.sleepSchedule,
-    setValue: _setSleep,
   ),
   _QuizQuestion(
+    id: LifestyleQuestion.study,
     category: 'student_quiz.category_2',
     title: 'student_quiz.study_title',
     prompt: 'student_quiz.study_prompt',
     icon: Icons.menu_book_outlined,
     options: [
-      const _QuizOption(
+      _QuizOption(
         value: StudyAtmosphere.librarySilence,
         label: 'student_quiz.study_silence',
         icon: Icons.volume_off_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: StudyAtmosphere.ambient,
         label: 'student_quiz.study_ambient',
         icon: Icons.headphones_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: StudyAtmosphere.social,
         label: 'student_quiz.study_social',
         icon: Icons.groups_outlined,
       ),
     ],
-    getValue: (preferences) => preferences.studyAtmosphere,
-    setValue: _setStudy,
   ),
   _QuizQuestion(
+    id: LifestyleQuestion.dishes,
     category: 'student_quiz.category_3',
     title: 'student_quiz.clean_title',
     prompt: 'student_quiz.clean_prompt',
     icon: Icons.cleaning_services_outlined,
     options: [
-      const _QuizOption(
+      _QuizOption(
         value: DishPolicy.immediate,
         label: 'student_quiz.dishes_immediate',
         icon: Icons.sanitizer_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: DishPolicy.sameDay,
         label: 'student_quiz.dishes_same_day',
         icon: Icons.timelapse_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: DishPolicy.weekend,
         label: 'student_quiz.dishes_weekend',
         icon: Icons.weekend_outlined,
       ),
     ],
-    getValue: (preferences) => preferences.dishPolicy,
-    setValue: _setDishes,
   ),
   _QuizQuestion(
+    id: LifestyleQuestion.guests,
     category: 'student_quiz.category_4',
     title: 'student_quiz.guests_title',
     prompt: 'student_quiz.guests_prompt',
     icon: Icons.celebration_outlined,
     options: [
-      const _QuizOption(
+      _QuizOption(
         value: GuestPreference.occasional,
         label: 'student_quiz.guests_occasional',
         icon: Icons.notifications_active_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: GuestPreference.anytime,
         label: 'student_quiz.guests_anytime',
         icon: Icons.meeting_room_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: GuestPreference.none,
         label: 'student_quiz.guests_none',
         icon: Icons.do_not_disturb_on_outlined,
       ),
     ],
-    getValue: (preferences) => preferences.guestPreference,
-    setValue: _setGuests,
   ),
   _QuizQuestion(
+    id: LifestyleQuestion.room,
     category: 'student_quiz.category_5',
     title: 'student_quiz.room_title',
     prompt: 'student_quiz.room_prompt',
     icon: Icons.meeting_room_outlined,
     options: [
-      const _QuizOption(
+      _QuizOption(
         value: RoomSharingPreference.privateRoom,
         label: 'student_quiz.room_private',
         icon: Icons.single_bed_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: RoomSharingPreference.doubleRoom,
         label: 'student_quiz.room_double',
         icon: Icons.king_bed_outlined,
       ),
-      const _QuizOption(
+      _QuizOption(
         value: RoomSharingPreference.tripleRoom,
         label: 'student_quiz.room_triple',
         icon: Icons.bed_outlined,
       ),
     ],
-    getValue: (preferences) => preferences.roomSharingPreference,
-    setValue: _setRoom,
   ),
 ];
-
-LifestylePreferences _setSleep(
-        LifestylePreferences preferences, Object value) =>
-    preferences.copyWith(sleepSchedule: value as SleepSchedule);
-
-LifestylePreferences _setStudy(
-        LifestylePreferences preferences, Object value) =>
-    preferences.copyWith(studyAtmosphere: value as StudyAtmosphere);
-
-LifestylePreferences _setDishes(
-        LifestylePreferences preferences, Object value) =>
-    preferences.copyWith(dishPolicy: value as DishPolicy);
-
-LifestylePreferences _setGuests(
-        LifestylePreferences preferences, Object value) =>
-    preferences.copyWith(guestPreference: value as GuestPreference);
-
-LifestylePreferences _setRoom(LifestylePreferences preferences, Object value) =>
-    preferences.copyWith(roomSharingPreference: value as RoomSharingPreference);

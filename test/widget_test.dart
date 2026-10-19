@@ -19,13 +19,15 @@ import 'package:zameel/src/ui/student/onboarding_bridge_page.dart';
 import 'package:zameel/src/ui/student/discovery_page.dart';
 import 'package:zameel/src/utils/failure.dart';
 import 'support/auth_fakes.dart';
+import 'support/profile_fakes.dart';
 
 final _translations = <String, Map<String, dynamic>>{};
 
 class _TestAssetLoader extends AssetLoader {
   const _TestAssetLoader();
   @override
-  Future<Map<String, dynamic>> load(String path, Locale locale) async => _translations[locale.languageCode]!;
+  Future<Map<String, dynamic>> load(String path, Locale locale) async =>
+      _translations[locale.languageCode]!;
 }
 
 Future<GoRouter> _pumpApp(
@@ -45,6 +47,8 @@ Future<GoRouter> _pumpApp(
     saveLocale: false,
     child: StateWrapper(
         repository: repository,
+        profileRepository:
+            FakeProfileRepository(repository.user ?? repository.loginUser),
         preferencesRepository: preferences ?? FakePreferencesRepository(),
         child: const App()),
   ));
@@ -55,9 +59,18 @@ Future<GoRouter> _pumpApp(
 Future<void> _tapButton(WidgetTester tester, String label) async {
   final button = find.widgetWithText(AppButton, label);
   if (button.evaluate().isEmpty) {
-    await tester.scrollUntilVisible(button, 200);
+    // Long forms build lazily; drag the primary list until the target exists.
+    final list = find.byType(ListView);
+    final view =
+        list.evaluate().isNotEmpty ? list.first : find.byType(Scrollable).first;
+    await tester.dragUntilVisible(button, view, const Offset(0, -240));
+    await tester.pumpAndSettle();
   }
-  await tester.ensureVisible(button);
+  expect(button, findsWidgets, reason: 'Missing AppButton "$label"');
+  // A pinned bottom action bar can cover a widget that is technically visible
+  // at the viewport edge, so center it before tapping.
+  await Scrollable.ensureVisible(button.evaluate().single, alignment: 0.5);
+  await tester.pumpAndSettle();
   await tester.tap(button);
   await tester.pumpAndSettle();
 }
@@ -66,13 +79,20 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
     for (final language in ['en', 'ar']) {
-      _translations[language] = jsonDecode(await rootBundle.loadString('assets/translations/$language.json')) as Map<String, dynamic>;
+      _translations[language] = jsonDecode(
+              await rootBundle.loadString('assets/translations/$language.json'))
+          as Map<String, dynamic>;
     }
-    final manifest = jsonDecode(await rootBundle.loadString('FontManifest.json')) as List<dynamic>;
+    final manifest =
+        jsonDecode(await rootBundle.loadString('FontManifest.json'))
+            as List<dynamic>;
     for (final entry in manifest.cast<Map<String, dynamic>>()) {
-      if (![AppFonts.latin, AppFonts.arabic].contains(entry['family'])) continue;
+      if (![AppFonts.latin, AppFonts.arabic].contains(entry['family'])) {
+        continue;
+      }
       final loader = FontLoader(entry['family'] as String);
-      for (final face in (entry['fonts'] as List<dynamic>).cast<Map<String, dynamic>>()) {
+      for (final face
+          in (entry['fonts'] as List<dynamic>).cast<Map<String, dynamic>>()) {
         loader.addFont(rootBundle.load(face['asset'] as String));
       }
       await loader.load();
@@ -203,13 +223,15 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('bridge skip persists and returning students bypass the bridge', (tester) async {
+  testWidgets('bridge skip persists and returning students bypass the bridge',
+      (tester) async {
     final repository = FakeAuthRepository()..user = student;
     final preferences = FakePreferencesRepository();
     addTearDown(repository.close);
     await _pumpApp(tester, repository, preferences: preferences);
     expect(find.byType(StudentOnboardingBridgePage), findsOneWidget);
-    final skip = find.widgetWithText(TextButton, 'student_onboarding.skip_browse'.tr());
+    final skip =
+        find.widgetWithText(TextButton, 'student_onboarding.skip_browse'.tr());
     await tester.ensureVisible(skip);
     await tester.tap(skip);
     await tester.pumpAndSettle();
@@ -222,7 +244,8 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('logout failure stays on account and can be retried', (tester) async {
+  testWidgets('logout failure stays on account and can be retried',
+      (tester) async {
     final repository = FakeAuthRepository()
       ..user = landlord
       ..logoutFailure = const NetworkFailure('auth_flow.network_error');

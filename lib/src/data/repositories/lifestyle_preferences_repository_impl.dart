@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:zameel/src/data/models/lifestyle_preferences.dart';
+import 'package:zameel/src/data/models/lifestyle_snapshot.dart';
 import 'package:zameel/src/data/repositories/lifestyle_preferences_repository.dart';
+import 'package:zameel/src/services/lifestyle_preferences_service.dart';
 import 'package:zameel/src/services/storage_service.dart';
 import 'package:zameel/src/utils/utils.dart';
 
@@ -10,9 +12,14 @@ class LifestylePreferencesRepositoryImpl
   static const String storageKeyPrefix = 'lifestyle_preferences_v';
 
   final StorageService _storageService;
+  final LifestylePreferencesService _service;
+  final _loads = <String, FutureEither<LifestyleSnapshot>>{};
 
-  LifestylePreferencesRepositoryImpl({StorageService? storageService})
-      : _storageService = storageService ?? StorageService.instance;
+  LifestylePreferencesRepositoryImpl({
+    StorageService? storageService,
+    LifestylePreferencesService? service,
+  })  : _storageService = storageService ?? StorageService.instance,
+        _service = service ?? LifestylePreferencesService.instance;
 
   /// Returns the exact SharedPreferences key used for a user.
   static String keyForUser(String userId) {
@@ -23,45 +30,55 @@ class LifestylePreferencesRepositoryImpl
   }
 
   @override
-  FutureEither<LifestylePreferences?> getPreferences({
+  FutureEither<LifestyleSnapshot> getPreferences({
     required String userId,
-  }) async {
-    return runTask<LifestylePreferences?>(() async {
+  }) =>
+      _loads.putIfAbsent(
+          userId,
+          () => _load(userId).whenComplete(() {
+                _loads.remove(userId);
+              }));
+
+  FutureEither<LifestyleSnapshot> _load(String userId) async {
+    final result = await _service.getPreferences(userId: userId);
+    // Never fall back to an editable cache after a failed cloud read, nor
+    // resurrect old local answers after a cloud save/clear on another device.
+    if (result.isLeft()) return result;
+    final snapshot = result.getOrElse((failure) => throw failure);
+    if (snapshot.revision > 0 || snapshot.answers.isNotEmpty) return result;
+
+    final local = await runTask(() async {
       final stored = _storageService.getString(keyForUser(userId));
-      if (stored == null) return null;
-
+      if (stored == null) return snapshot;
       final decoded = jsonDecode(stored);
-      if (decoded is! Map) return null;
-
-      final json = Map<String, dynamic>.from(decoded);
-      if (json['version'] != LifestylePreferences.currentVersion) {
-        return null;
+      if (decoded is! Map ||
+          decoded['version'] != LifestylePreferences.currentVersion) {
+        throw const FormatException('Unsupported local lifestyle draft');
       }
-
-      return LifestylePreferences.fromJson(json);
+      // Earlier versions promised device-only storage. Stage, do not upload:
+      // the quiz explains the change before the user explicitly saves it.
+      return snapshot.withLocalDraft(
+          LifestylePreferences.fromJson(Map<String, dynamic>.from(decoded)));
     });
+    return local
+        .mapLeft((_) => const CacheFailure('student_quiz.local_data_error'));
   }
 
   @override
-  FutureEither<void> savePreferences({
+  FutureEither<LifestyleSnapshot> savePreferences({
     required String userId,
+    required LifestyleSnapshot original,
     required LifestylePreferences preferences,
   }) async {
-    return runTask(() async {
-      final encoded = jsonEncode(preferences.toJson());
-      final result =
-          await _storageService.setString(keyForUser(userId), encoded);
-      result.match(
-        (failure) => throw failure,
-        (_) {},
-      );
-    });
-  }
-
-  @override
-  FutureEither<void> deletePreferences({required String userId}) async {
-    return runTask(() async {
-      await _storageService.remove(keyForUser(userId));
-    });
+    final result = await _service.savePreferences(
+        userId: userId, original: original, preferences: preferences);
+    if (result.isRight() && original.isLocalDraft) {
+      final removed = await _storageService.remove(keyForUser(userId));
+      if (removed.fold((_) => true, (success) => !success)) {
+        AppLogger.warning(
+            'Cloud preferences saved; local draft cleanup failed.');
+      }
+    }
+    return result;
   }
 }

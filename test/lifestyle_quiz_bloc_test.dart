@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:zameel/src/data/models/lifestyle_preferences.dart';
+import 'package:zameel/src/data/models/lifestyle_snapshot.dart';
 import 'package:zameel/src/data/repositories/lifestyle_preferences_repository.dart';
 import 'package:zameel/src/shared/enums/app_status.dart';
 import 'package:zameel/src/ui/student/lifestyle_quiz/lifestyle_quiz_bloc.dart';
@@ -70,7 +71,8 @@ void main() {
       expect(failed.errorMessage, 'load_failed');
 
       bloc
-        ..add(const LifestylePreferencesChanged(_completeAnswers))
+        ..add(const LifestyleAnswerChanged(
+            LifestyleQuestion.sleep, SleepSchedule.nightOwl))
         ..add(const LifestylePreferencesSaveRequested())
         ..add(const LifestylePreferencesSkipRequested());
       await Future<void>.delayed(Duration.zero);
@@ -98,7 +100,8 @@ void main() {
       );
 
       bloc
-        ..add(const LifestylePreferencesChanged(_completeAnswers))
+        ..add(const LifestyleAnswerChanged(
+            LifestyleQuestion.sleep, SleepSchedule.nightOwl))
         ..add(const LifestylePreferencesSaveRequested())
         ..add(const LifestylePreferencesSkipRequested())
         ..add(const LifestyleQuizStarted());
@@ -142,7 +145,10 @@ void main() {
         (state) => state.loadStatus == AppStatus.success,
       );
 
-      bloc.add(const LifestylePreferencesChanged(_completeAnswers));
+      for (final question in LifestyleQuestion.values) {
+        bloc.add(LifestyleAnswerChanged(
+            question, _completeAnswers.answerFor(question)));
+      }
       await bloc.stream.firstWhere(
         (state) => state.preferences == _completeAnswers,
       );
@@ -197,7 +203,8 @@ void main() {
         (state) => state.loadStatus == AppStatus.success,
       );
       final changed = saved.copyWith(sleepSchedule: SleepSchedule.nightOwl);
-      bloc.add(LifestylePreferencesChanged(changed));
+      bloc.add(const LifestyleAnswerChanged(
+          LifestyleQuestion.sleep, SleepSchedule.nightOwl));
       await bloc.stream.firstWhere((state) => state.preferences == changed);
       bloc.add(const LifestylePreferencesSkipRequested());
 
@@ -231,7 +238,8 @@ void main() {
         final changed = _completeAnswers.copyWith(
           guestPreference: GuestPreference.none,
         );
-        bloc.add(LifestylePreferencesChanged(changed));
+        bloc.add(const LifestyleAnswerChanged(
+            LifestyleQuestion.guests, GuestPreference.none));
         await bloc.stream.firstWhere((state) => state.preferences == changed);
         bloc.add(skip
             ? const LifestylePreferencesSkipRequested()
@@ -276,7 +284,7 @@ void main() {
       bloc
         ..add(const LifestylePreferencesSaveRequested())
         ..add(const LifestylePreferencesSkipRequested())
-        ..add(const LifestylePreferencesChanged(LifestylePreferences()))
+        ..add(const LifestyleAnswerChanged(LifestyleQuestion.sleep, null))
         ..add(const LifestyleQuizStarted());
       await Future<void>.delayed(Duration.zero);
       expect(repository.saveCalls, 1);
@@ -289,6 +297,158 @@ void main() {
       );
       expect(repository.saved, saved.preferences);
       expect(saved.preferences.sleepSchedule, SleepSchedule.nightOwl);
+    });
+
+    test('rapid changes merge against current state without any persistence',
+        () async {
+      final bloc =
+          LifestyleQuizBloc(repository: repository, userId: 'student-1');
+      addTearDown(bloc.close);
+      await bloc.stream
+          .firstWhere((state) => state.loadStatus == AppStatus.success);
+
+      for (var i = 0; i < 100; i++) {
+        bloc.add(LifestyleAnswerChanged(LifestyleQuestion.sleep,
+            i.isEven ? SleepSchedule.earlyBird : SleepSchedule.nightOwl));
+      }
+      bloc.add(const LifestyleAnswerChanged(
+          LifestyleQuestion.study, StudyAtmosphere.ambient));
+      bloc.add(const LifestyleAnswerChanged(
+          LifestyleQuestion.guests, GuestPreference.none));
+      final changed = await bloc.stream.firstWhere(
+          (state) => state.preferences.guestPreference == GuestPreference.none);
+      expect(changed.preferences.sleepSchedule, SleepSchedule.nightOwl);
+      expect(changed.preferences.studyAtmosphere, StudyAtmosphere.ambient);
+      expect(changed.preferences.answeredCount, 3);
+      expect(changed.isDirty, isTrue);
+      expect(repository.loadCalls, 1);
+      expect(repository.saveCalls, 0);
+    });
+
+    for (final error in [
+      'student_quiz.conflict',
+      'student_quiz.request_failed'
+    ]) {
+      test('$error preserves draft and revision until explicit reload',
+          () async {
+        repository
+          ..saved = _completeAnswers
+          ..savedUserId = 'student-1'
+          ..revision = 7
+          ..saveFailure = ServerFailure(error);
+        final bloc =
+            LifestyleQuizBloc(repository: repository, userId: 'student-1');
+        addTearDown(bloc.close);
+        await bloc.stream
+            .firstWhere((state) => state.loadStatus == AppStatus.success);
+        bloc.add(const LifestyleAnswerChanged(
+            LifestyleQuestion.guests, GuestPreference.none));
+        await bloc.stream.firstWhere((state) => state.isDirty);
+        bloc.add(const LifestylePreferencesSaveRequested());
+        final failed = await bloc.stream
+            .firstWhere((state) => state.errorMessage == error);
+        expect(failed.preferences.guestPreference, GuestPreference.none);
+        expect(failed.snapshot!.revision, 7);
+        expect(repository.lastOriginal!.revision, 7);
+        expect(failed.savedCount, 0);
+        expect(failed.needsReload, isTrue);
+
+        repository.saveFailure = null;
+        bloc.add(const LifestyleAnswerChanged(
+            LifestyleQuestion.study, StudyAtmosphere.ambient));
+        bloc.add(const LifestylePreferencesSkipRequested());
+        bloc.add(const LifestylePreferencesSaveRequested());
+        await Future<void>.delayed(Duration.zero);
+        expect(bloc.state.errorMessage, error);
+        expect(repository.saveCalls, 1);
+        repository.revision = 9;
+        bloc.add(const LifestyleQuizStarted(discardChanges: true));
+        await bloc.stream.firstWhere((state) =>
+            state.loadStatus == AppStatus.success && !state.needsReload);
+        expect(bloc.state.snapshot!.revision, 9);
+        expect(bloc.state.preferences, _completeAnswers);
+        bloc.add(const LifestylePreferencesSaveRequested());
+        final saved =
+            await bloc.stream.firstWhere((state) => state.savedCount == 1);
+        expect(saved.snapshot!.revision, 10);
+        expect(saved.preferences.completedAt, DateTime.utc(2026, 10, 18));
+        expect(repository.loadCalls, 2);
+        expect(repository.saveCalls, 2);
+      });
+    }
+
+    test('clearing a saved answer and skipping keeps that question unanswered',
+        () async {
+      repository
+        ..saved = _completeAnswers.copyWith(
+            isComplete: true, completedAt: DateTime.utc(2026))
+        ..savedUserId = 'student-1';
+      final bloc =
+          LifestyleQuizBloc(repository: repository, userId: 'student-1');
+      addTearDown(bloc.close);
+      await bloc.stream
+          .firstWhere((state) => state.loadStatus == AppStatus.success);
+      bloc.add(const LifestyleAnswerChanged(LifestyleQuestion.room, null));
+      await bloc.stream.firstWhere((state) => state.isDirty);
+      bloc.add(const LifestylePreferencesSkipRequested());
+      final saved =
+          await bloc.stream.firstWhere((state) => state.savedCount == 1);
+      expect(saved.preferences.roomSharingPreference, isNull);
+      expect(saved.preferences.isSkipped, isTrue);
+      expect(saved.preferences.isComplete, isFalse);
+      expect(saved.preferences.completedAt, isNull);
+      expect(
+          saved.snapshot!.answers
+              .any((answer) => answer.optionType == 'room_sharing'),
+          isFalse);
+    });
+
+    test('local-only answers stay staged until a confirmed explicit save',
+        () async {
+      repository
+        ..saved =
+            const LifestylePreferences(sleepSchedule: SleepSchedule.earlyBird)
+        ..savedUserId = 'student-1'
+        ..isLocalDraft = true;
+      final bloc =
+          LifestyleQuizBloc(repository: repository, userId: 'student-1');
+      addTearDown(bloc.close);
+      final loaded = await bloc.stream
+          .firstWhere((state) => state.loadStatus == AppStatus.success);
+      expect(loaded.needsImport, isTrue);
+      expect(loaded.isDirty, isFalse);
+      expect(repository.saveCalls, 0);
+      bloc.add(const LifestylePreferencesSkipRequested());
+      final saved =
+          await bloc.stream.firstWhere((state) => state.savedCount == 1);
+      expect(saved.needsImport, isFalse);
+      expect(saved.snapshot!.revision, 1);
+      expect(saved.preferences.sleepSchedule, SleepSchedule.earlyBird);
+      expect(saved.preferences.skippedAt, DateTime.utc(2026, 10, 18));
+      expect(repository.loadCalls, 1);
+    });
+
+    test(
+        'reverting an answer restores clean state without changing saved metadata',
+        () async {
+      final original = _completeAnswers.copyWith(
+          isSkipped: true, skippedAt: DateTime.utc(2026));
+      repository
+        ..saved = original
+        ..savedUserId = 'student-1';
+      final bloc =
+          LifestyleQuizBloc(repository: repository, userId: 'student-1');
+      addTearDown(bloc.close);
+      await bloc.stream
+          .firstWhere((state) => state.loadStatus == AppStatus.success);
+      bloc.add(const LifestyleAnswerChanged(
+          LifestyleQuestion.sleep, SleepSchedule.earlyBird));
+      await bloc.stream.firstWhere((state) => state.isDirty);
+      bloc.add(const LifestyleAnswerChanged(
+          LifestyleQuestion.sleep, SleepSchedule.nightOwl));
+      final reverted = await bloc.stream.firstWhere((state) => !state.isDirty);
+      expect(reverted.preferences, original);
+      expect(repository.saveCalls, 0);
     });
   });
 }
@@ -312,34 +472,49 @@ class _FakeLifestylePreferencesRepository
   Completer<void>? saveGate;
   int loadCalls = 0;
   int saveCalls = 0;
+  int revision = 0;
+  bool isLocalDraft = false;
+  LifestyleSnapshot? lastOriginal;
 
   @override
-  FutureEither<LifestylePreferences?> getPreferences(
+  FutureEither<LifestyleSnapshot> getPreferences(
       {required String userId}) async {
     loadCalls++;
     loadedUserId = userId;
     await loadGate?.future;
     if (loadFailure != null) return left(loadFailure!);
-    return right(savedUserId == userId ? saved : null);
+    return right(LifestyleSnapshot(
+      userId: userId,
+      preferences: savedUserId == userId
+          ? saved ?? const LifestylePreferences()
+          : const LifestylePreferences(),
+      revision: revision,
+      isLocalDraft: isLocalDraft,
+    ));
   }
 
   @override
-  FutureEither<void> savePreferences({
+  FutureEither<LifestyleSnapshot> savePreferences({
     required String userId,
+    required LifestyleSnapshot original,
     required LifestylePreferences preferences,
   }) async {
     saveCalls++;
+    lastOriginal = original;
     await saveGate?.future;
     if (saveFailure != null) return left(saveFailure!);
     savedUserId = userId;
-    saved = preferences;
-    return right(null);
-  }
-
-  @override
-  FutureEither<void> deletePreferences({required String userId}) async {
-    saved = null;
-    savedUserId = null;
-    return right(null);
+    saved = preferences.copyWith(
+      completedAt: preferences.isComplete ? DateTime.utc(2026, 10, 18) : null,
+      skippedAt: preferences.isSkipped ? DateTime.utc(2026, 10, 18) : null,
+    );
+    revision = original.revision + 1;
+    isLocalDraft = false;
+    return right(LifestyleSnapshot(
+      userId: userId,
+      preferences: saved!,
+      revision: revision,
+      answers: original.answersFor(saved!),
+    ));
   }
 }

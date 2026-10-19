@@ -7,6 +7,7 @@ export 'app_empty_state.dart';
 export 'app_card.dart';
 export 'app_divider.dart';
 export 'status_badge.dart';
+export 'profile_avatar.dart';
 export 'app_top_bar.dart';
 export 'common_image.dart';
 export 'toast/imports.dart';

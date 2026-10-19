@@ -9,8 +9,11 @@ class SessionListenerWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocListener<SessionBloc, SessionState>(
         listener: (context, state) {
-          if (state.status != SessionStatus.unknown) {
-            FlutterNativeSplash.remove();
+          final language = state.user?.preferredLanguage;
+          if (state.status == SessionStatus.authenticated &&
+              language != null &&
+              context.locale.languageCode != language) {
+            context.setLocale(Locale(language));
           }
           if (state.errorMessage != null &&
               state.status != SessionStatus.failure) {

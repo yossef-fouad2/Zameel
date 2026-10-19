@@ -98,7 +98,7 @@ class StudentOnboardingBridgePage extends StatelessWidget {
                             color: colors.surfaceContainerHigh,
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(Icons.phone_android_outlined,
+                          child: Icon(Icons.lock_outline,
                               size: 18.sp, color: colors.primary),
                         ),
                         SizedBox(width: AppSpacing.sm),
@@ -130,7 +130,10 @@ class StudentOnboardingBridgePage extends StatelessWidget {
                     Semantics(
                       liveRegion: true,
                       child: Text(
-                        'student_onboarding.skip_error'.tr(),
+                        (state.errorMessage!.startsWith('student_quiz.')
+                                ? state.errorMessage!
+                                : 'student_onboarding.skip_error')
+                            .tr(),
                         style:
                             textTheme.bodyMedium?.copyWith(color: colors.error),
                       ),
