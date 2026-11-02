@@ -15,11 +15,13 @@ import 'package:zameel/src/ui/auth/role_selection_page.dart';
 import 'package:zameel/src/ui/auth/student_auth_page.dart';
 import 'package:zameel/src/ui/auth/update_password_page.dart';
 import 'package:zameel/src/ui/profile/account_page.dart';
+import 'package:zameel/src/ui/landlord/landlord_listings_page.dart';
 import 'package:zameel/src/ui/student/onboarding_bridge_page.dart';
 import 'package:zameel/src/ui/student/discovery_page.dart';
 import 'package:zameel/src/utils/failure.dart';
 import 'support/auth_fakes.dart';
 import 'support/profile_fakes.dart';
+import 'support/listing_fakes.dart';
 
 final _translations = <String, Map<String, dynamic>>{};
 
@@ -50,6 +52,8 @@ Future<GoRouter> _pumpApp(
         profileRepository:
             FakeProfileRepository(repository.user ?? repository.loginUser),
         preferencesRepository: preferences ?? FakePreferencesRepository(),
+        listingRepository: FakeListingRepository(),
+        universityRepository: FakeUniversityRepository(),
         child: const App()),
   ));
   await tester.pumpAndSettle();
@@ -167,11 +171,13 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(1), 'secret');
     await _tapButton(tester, 'Sign In to Zameel');
     expect(repository.lastPassword, 'secret');
-    expect(find.byType(AccountPage), findsOneWidget);
+    expect(find.byType(LandlordListingsPage), findsOneWidget);
     expect(router.routeInformationProvider.value.uri.path, AppRoutes.landlord);
     router.go(AppRoutes.lifestyleQuiz);
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, AppRoutes.landlord);
+    await tester.tap(find.byTooltip('auth_flow.account'.tr()));
+    await tester.pumpAndSettle();
     await _tapButton(tester, 'Sign out');
     expect(find.byType(RoleSelectionPage), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -251,6 +257,8 @@ void main() {
       ..logoutFailure = const NetworkFailure('auth_flow.network_error');
     addTearDown(repository.close);
     await _pumpApp(tester, repository);
+    await tester.tap(find.byTooltip('auth_flow.account'.tr()));
+    await tester.pumpAndSettle();
     await _tapButton(tester, 'Sign out');
     expect(find.byType(AccountPage), findsOneWidget);
     expect(find.text('auth_flow.network_error'.tr()), findsOneWidget);

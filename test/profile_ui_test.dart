@@ -20,6 +20,7 @@ import 'package:zameel/src/ui/profile/account_page.dart';
 import 'package:zameel/src/utils/failure.dart';
 import 'support/auth_fakes.dart';
 import 'support/profile_fakes.dart';
+import 'support/listing_fakes.dart';
 
 final _translations = <String, Map<String, dynamic>>{};
 final _nameField = find.byKey(const ValueKey('profile.name'));
@@ -73,6 +74,8 @@ Future<FakeProfileRepository> _pump(
         repository: auth,
         profileRepository: profile,
         preferencesRepository: FakePreferencesRepository(),
+        listingRepository: FakeListingRepository(),
+        universityRepository: FakeUniversityRepository(),
         child: const App()),
   ));
   await tester.pumpAndSettle();

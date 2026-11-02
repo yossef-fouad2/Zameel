@@ -41,6 +41,14 @@ Keep student and landlord permissions separate. A user must not be able to manag
 
 ## 3. Main Product Features
 
+### Current Agreed Release Slice
+
+Milestones 5 and 6 now implement a lean graduation-project flow: landlord create/edit/draft/publish/archive with an exact public map pin, the 16 supplied Egyptian university reference locations, Geoapify walking-distance caching, and student discovery within 10 km walking ordered nearest first. University choice is remembered per account on the same device. Supplied university pins are not verified entrances; missing routes are not replaced with straight-line estimates. See `SETUP.md` for deployment and live acceptance prerequisites.
+
+Milestone 7 adds per-bed booking requests: student submission, history and cancellation, plus landlord review, acceptance and rejection. Original quotes remain attached to requests; pending requests do not reserve capacity. All transitions use the existing guarded RPCs, with account-bound requests and explicit reconciliation after uncertain responses. Hosted RPC/RLS/concurrency and physical-device acceptance remain separate from local tests.
+
+The broader feature descriptions below remain product goals, not claims that every field or screen is implemented. Listing-photo uploads, amenity/house-rule editing, saved properties and broader filters/map browsing remain deferred. Compatibility summaries are the next implementation milestone (M9); lifestyle preferences already exist through M4.5/M8. Keep presentation in the replaceable `ui/landlord/views/`, `ui/student/views/`, `ui/bookings/views/` and shared housing/map widgets, separately from Cubits and data access.
+
 ### A. Accommodation Listings and Discovery
 Each listing should support, at minimum:
 - Title and description.

@@ -7,6 +7,23 @@ Consult this before writing new UI, helpers, or services — most things you nee
 
 Current auth/design milestone update: the theme uses fixed Kinship-inspired light/dark palettes and bundled Plus Jakarta Sans / IBM Plex Sans Arabic. `buildLightTheme(locale: context.locale)` and `buildDarkTheme(locale: context.locale)` choose typography; there is no seed/primaryColorHex override. See DESIGN.md for the current sizing and accessibility rules.
 
+### Replaceable Housing UI
+
+- `lib/src/ui/landlord/views/` contains the landlord dashboard and form presentation. `lib/src/ui/student/views/` contains Explore and property-detail presentation. `lib/src/ui/bookings/views/` contains the request form, inbox and booking details. These receive immutable state and callbacks; replace them without changing repositories, Cubits, ownership rules or route calculations.
+- Page files bind authentication, Cubits, named navigation and dialogs. Feature Cubits handle validation, dirty drafts, save conflicts, university selection, request races and pagination. Do not move Supabase access into a replacement view.
+- `lib/src/ui/listings/widgets/listing_ui.dart` contains presentation-only housing cards, prices, walking-distance chips, sections, feedback surfaces and restrained entrance animation. `HousingHero` uses a decorative building illustration, not invented map or property-photo data. Motion respects reduced-motion settings.
+- `PropertyMap` in `shared/widgets/property_map.dart` accepts coordinates, university records and callbacks. Without `onLocationChanged` it is read-only and fits the property and supplied university pins; pan/zoom can remain enabled. With that callback it only selects loaded geography. It works in a scrollable parent or a bounded-height region, and accepts a fake `TileProvider` for tests. Its owning layer disposes an injected provider.
+- `UniversitySelector` is a local searchable selector; it does not fetch or persist data. `PropertyLocationPage` holds a preview and returns a `GeoPoint` only after explicit confirmation. Its map-builder injection allows tests or a future presentation replacement without backend changes.
+- `MapConfig` centralizes public Geoapify tile styles and safe provider error handling. The routing API credential and walking calculations belong in the Supabase Edge Function, never in this renderer. Keep the visible linked map attribution when changing the design.
+
+### Booking Workflow
+
+- `Booking` keeps typed status/action rules, the immutable submitted quote, and exact timestamp strings for keyset cursors. Its current `listing` may be null when RLS hides the property; do not remove the student's request history or replace its quote with current rent.
+- `BookingRepository` / `BookingRepositoryImpl` are injected by `StateWrapper`. `BookingService` reads role-filtered history and calls the four existing booking RPCs. It resolves/checks the expected SDK session and binds authorization per request, never through global headers or a manual token cache. Keep both pre-dispatch and post-response account checks.
+- `BookingRequestCubit`, `BookingsCubit` and `BookingDetailsCubit` under `ui/bookings/` own preflight checks, local-only message editing, pagination, stable request IDs, uncertain retries and conflict reconciliation. Never generate a replacement ID or alter the payload while an attempt is uncertain. Pending requests do not reserve beds; only the server changes booking status, occupancy and residents.
+- Page bindings own account-keyed Cubit lifetimes, navigation and confirmations. Use the central named routes `bookingRequest`, `studentBookingDetails`, `landlordBookings` and `landlordBookingDetails`; the student's inbox is the Requests tab in `discovery`. Return navigation and inbox activation refresh authoritative data without optimistic capacity edits.
+- `ui/bookings/widgets/booking_ui.dart` contains `BookingCard`, `BookingQuote`, `BookingTimeline` and `BookingStatusBadge`. Reuse housing cards/sections/reveals and `appTransitionPage`; the status crossfade excludes outgoing semantics and all custom booking motion respects reduced motion. See SETUP.md for hosted acceptance and DESIGN.md for presentation limits.
+
 ---
 
 ## 0. The import rule (start here)

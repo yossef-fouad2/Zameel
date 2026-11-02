@@ -14,7 +14,10 @@ import 'package:zameel/src/data/models/lifestyle_preferences.dart';
 import 'package:zameel/src/data/models/lifestyle_snapshot.dart';
 import 'package:zameel/src/data/models/user_model.dart';
 import 'package:zameel/src/data/models/user_role.dart';
+import 'package:zameel/src/data/repositories/booking_repository.dart';
 import 'package:zameel/src/data/repositories/lifestyle_preferences_repository.dart';
+import 'package:zameel/src/data/repositories/listing_repository.dart';
+import 'package:zameel/src/data/repositories/university_repository.dart';
 import 'package:zameel/src/routing/app_routes.dart';
 import 'package:zameel/src/shared/widgets/app_button.dart';
 import 'package:zameel/src/shared/widgets/app_card.dart';
@@ -29,6 +32,8 @@ import 'package:zameel/src/ui/student/lifestyle_quiz/lifestyle_quiz_page.dart';
 import 'package:zameel/src/ui/student/onboarding_bridge_page.dart';
 import 'package:zameel/src/utils/failure.dart';
 import 'package:zameel/src/utils/typedefs.dart';
+import 'support/booking_fakes.dart';
+import 'support/listing_fakes.dart';
 
 final _translations = <String, Map<String, dynamic>>{};
 const _student = AppUser(
@@ -751,22 +756,26 @@ void main() {
     }
   });
 
-  testWidgets('discovery shows honest shells and real quiz and account entry',
+  testWidgets('discovery has real Requests and honest unfinished tabs',
       (tester) async {
     final session = _RecordingSessionBloc();
     final router = _router(AppRoutes.discovery);
     addTearDown(session.close);
     addTearDown(router.dispose);
     await _pumpSurface(tester, router: router, session: session);
-    expect(find.text('student_discovery.empty_explore'.tr()), findsOneWidget);
+    expect(find.text('universities.title'.tr()), findsOneWidget);
     expect(find.textContaining('1,250'), findsNothing);
     expect(find.byType(FloatingActionButton), findsNothing);
     expect(find.byType(BackButton), findsNothing);
 
-    for (final tab in ['requests', 'saved']) {
+    for (final (tab, emptyKey) in [
+      ('requests', 'bookings.student.empty_title'),
+      ('saved', 'student_discovery.empty_saved'),
+    ]) {
       await tester.tap(find.text('student_discovery.$tab'.tr()));
       await tester.pumpAndSettle();
-      expect(find.text('student_discovery.empty_$tab'.tr()), findsOneWidget);
+      expect(find.text(emptyKey.tr()), findsOneWidget);
+      expect(tester.takeException(), isNull);
     }
     await tester.tap(find.text('student_discovery.match_quiz'.tr()));
     await tester.pumpAndSettle();
@@ -867,9 +876,24 @@ Future<void> _pumpSurface(
       },
     ),
   );
-  await tester.pumpWidget(session == null
+  final surfaceSession = session ??
+      (home is StudentDiscoveryPage ? _RecordingSessionBloc() : null);
+  if (session == null && surfaceSession != null) {
+    addTearDown(surfaceSession.close);
+  }
+  final listings = FakeListingRepository();
+  await tester.pumpWidget(surfaceSession == null
       ? localized
-      : BlocProvider<SessionBloc>.value(value: session, child: localized));
+      : MultiRepositoryProvider(
+          providers: [
+              RepositoryProvider<ListingRepository>(create: (_) => listings),
+              RepositoryProvider<UniversityRepository>(
+                  create: (_) => FakeUniversityRepository()),
+              RepositoryProvider<BookingRepository>(
+                  create: (_) => FakeBookingRepository(listings: listings)),
+            ],
+          child: BlocProvider<SessionBloc>.value(
+              value: surfaceSession, child: localized)));
   await tester.pumpAndSettle();
 }
 

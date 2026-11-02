@@ -89,6 +89,14 @@ Do not invent new global radius or spacing names for one screen. Keep component-
 - Busy controls prevent duplicate saves. Toolbar and system Back share a discard guard. Conflicts and uncertain responses preserve the draft and require an explicit reload before another write. A confirmed save updates the session without a full account reload.
 - Request counts, reduced-motion behavior and widget rebuild isolation are testable locally. Hardware smoothness still needs a profile-mode run on target devices; do not equate widget tests with an FPS measurement.
 
+## Booking Performance
+
+- Keep request/inbox/detail presentation in `ui/bookings/views/`, with immutable state and callbacks. Reuse housing hero panels, numbered sections, `AppCard`, `AppButton` and semantic status colors rather than introducing another visual system.
+- Inbox cards are lazily built and reuse the restrained `HousingReveal` fade/12px slide. `BookingStatusBadge` crossfades only when status changes, excludes outgoing badges from semantics, and bypasses animation under reduced motion. Detail routes reuse `appTransitionPage`; no background animation loop or new package is needed.
+- Message keystrokes update local Cubit state without network or storage writes. A submission uses one stable attempt ID; an uncertain response freezes that payload until reconciliation or an explicit same-attempt retry. Busy actions and both Back paths protect the flow.
+- Display original quoted rent separately from current bed availability. Do not optimistically decrement capacity, invent move-in events or show an accepted state before a confirmed server result. Private student profiles are not exposed in the landlord inbox.
+- Status and confirmation copy wrap in English/Arabic, and forms remain scrollable with enlarged text and the keyboard visible. Tests exercise normal/reduced motion, outgoing semantics exclusion and idle settling; physical-device smoothness still requires a profile-mode run.
+
 ## New Page Pattern
 
 ```dart

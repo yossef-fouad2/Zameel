@@ -13,7 +13,14 @@ import '../ui/auth/update_password_page.dart';
 import '../ui/auth/session_gate_page.dart';
 import '../ui/auth/bloc/session_bloc.dart';
 import '../ui/profile/account_page.dart';
+import '../ui/bookings/booking_details_page.dart';
+import '../ui/bookings/booking_request_page.dart';
+import '../ui/bookings/bookings_page.dart';
+import '../ui/landlord/landlord_listings_page.dart';
+import '../ui/landlord/listing_editor_page.dart';
+import '../ui/landlord/property_location_page.dart';
 import '../ui/student/discovery_page.dart';
+import '../ui/student/property_details_page.dart';
 import '../ui/student/lifestyle_quiz/lifestyle_quiz_page.dart';
 import '../ui/student/onboarding_bridge_page.dart';
 import 'app_routes.dart';
@@ -175,14 +182,46 @@ GoRouter createAppRouter(SessionBloc session,
         GoRoute(
             path: AppRoutes.discovery,
             name: 'discovery',
-            builder: (context, state) => const StudentDiscoveryPage()),
+            builder: (context, state) => StudentDiscoveryPage(
+                initialIndex:
+                    state.uri.queryParameters['tab'] == 'requests' ? 1 : 0)),
         GoRoute(
             path: AppRoutes.landlord,
             name: 'landlord',
             pageBuilder: (context, state) => appTransitionPage(
                 context: context,
                 key: state.pageKey,
-                child: const AccountPage(landlordLanding: true))),
+                child: const LandlordListingsPage())),
+        GoRoute(
+            path: AppRoutes.listingCreate,
+            name: 'listingCreate',
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: const ListingEditorPage())),
+        GoRoute(
+            path: AppRoutes.listingEdit,
+            name: 'listingEdit',
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: ListingEditorPage(
+                    listingId: state.pathParameters['listingId']))),
+        GoRoute(
+            path: AppRoutes.propertyLocation,
+            name: 'propertyLocation',
+            pageBuilder: (context, state) {
+              final args = state.extra is PropertyLocationArguments
+                  ? state.extra as PropertyLocationArguments
+                  : null;
+              return appTransitionPage(
+                  context: context,
+                  key: state.pageKey,
+                  child: PropertyLocationPage(
+                    initialLocation: args?.location,
+                    universities: args?.universities ?? const [],
+                  ));
+            }),
         GoRoute(
             path: AppRoutes.account,
             name: 'account',
@@ -190,6 +229,50 @@ GoRouter createAppRouter(SessionBloc session,
                 context: context,
                 key: state.pageKey,
                 child: const AccountPage())),
+        GoRoute(
+            path: AppRoutes.listingDetails,
+            name: 'listingDetails',
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: PropertyDetailsPage(
+                  listingId: state.pathParameters['listingId']!,
+                  universityId: int.tryParse(
+                      state.uri.queryParameters['universityId'] ?? ''),
+                ))),
+        GoRoute(
+            path: AppRoutes.bookingRequest,
+            name: 'bookingRequest',
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: BookingRequestPage(
+                    listingId: state.pathParameters['listingId']!))),
+        GoRoute(
+            path: AppRoutes.studentBookingDetails,
+            name: 'studentBookingDetails',
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: BookingDetailsPage(
+                    bookingId: state.pathParameters['bookingId']!,
+                    role: UserRole.student))),
+        GoRoute(
+            path: AppRoutes.landlordBookings,
+            name: 'landlordBookings',
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: const LandlordBookingsPage())),
+        GoRoute(
+            path: AppRoutes.landlordBookingDetails,
+            name: 'landlordBookingDetails',
+            pageBuilder: (context, state) => appTransitionPage(
+                context: context,
+                key: state.pageKey,
+                child: BookingDetailsPage(
+                    bookingId: state.pathParameters['bookingId']!,
+                    role: UserRole.landlord))),
         GoRoute(
             path: AppRoutes.home,
             name: 'home',

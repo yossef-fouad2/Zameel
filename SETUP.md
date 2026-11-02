@@ -9,6 +9,7 @@ The root `.env` is a bundled Flutter asset, so it must exist when building. Keep
 ```dotenv
 SUPABASE_URL=https://YOUR-PROJECT.supabase.co
 SUPABASE_ANON_KEY=YOUR-PUBLIC-ANON-KEY
+GEOAPIFY_MAPS_API_KEY=YOUR-PUBLIC-GEOAPIFY-MAP-KEY
 ```
 
 Alternatively use `SUPABASE_PUBLISHABLE_KEY=sb_publishable_...` instead of `SUPABASE_ANON_KEY`. When both are present, the publishable-key setting takes precedence. Get the URL and public key from your project's API settings.
@@ -34,11 +35,45 @@ Use [supabase/001_marketplace_setup.sql](supabase/001_marketplace_setup.sql), **
 6. In development, run [supabase/004_profile_avatars_verify.sql](supabase/004_profile_avatars_verify.sql). It checks profile permissions, private avatars, and compatibility with the original schema using rolled-back fixtures.
 7. Run [supabase/005_lifestyle_sync.sql](supabase/005_lifestyle_sync.sql) for milestone 4.5. The updated student flow calls its preference RPCs, so apply it before using this app version.
 8. In development, run [supabase/006_lifestyle_sync_verify.sql](supabase/006_lifestyle_sync_verify.sql). It checks private atomic saves, revision conflicts, skip/completion metadata and validation with rolled-back fixtures.
-9. Keep `zameel_private` out of the API's exposed schemas and do not add broad permissive policies/grants to the application tables.
+9. Run [supabase/007_university_discovery.sql](supabase/007_university_discovery.sql) for milestones 5 and 6. It adds the supplied university catalogue, protected walking-route cache, discovery RPC, and published-pin requirement.
+10. In development, run [supabase/008_university_discovery_verify.sql](supabase/008_university_discovery_verify.sql). Its fixtures roll back and cover publication, cache privacy/invalidation, trusted writes, ordering and pagination.
+11. Keep `zameel_private` out of the API's exposed schemas and do not add broad permissive policies/grants to the application tables.
 
 The setup creates profiles, listings, photos, amenities, house rules, optional lifestyle answers, bookings, resident links, RLS, a private photo bucket, and guarded booking RPCs. It inserts reference dictionaries only, not fake listings or users.
 
-**Already installed `001`?** Apply `003` if it is not installed, then `005`. Use `004` and `006` for the corresponding development checks; do not rerun `001`. Neither migration wipes existing profiles or answers. Unchanged migration reruns are checked no-ops; incompatible objects are refused rather than replaced. `002` checks the original direct preference-write contract and belongs **before** `005`; after `005`, use `006` for the new RPC-only contract.
+**Already installed `001`?** Apply only missing upgrades: `003`, `005`, then `007`; do not rerun `001`. Unchanged migration reruns are checked no-ops; incompatible objects are refused rather than replaced. For a fresh disposable database, use the full order **001, 002, 003, 004, 005, 006, 007, 008**. `002` checks the old direct preference-write contract and belongs before `005`. `004` publishes an old address-only fixture and belongs before `007`. Use `006` and `008` to verify the corresponding upgraded contracts.
+
+Milestone 7 uses the booking tables and guarded RPCs already installed by `001`; it adds no migration and does not require rerunning the installer.
+
+### Property Maps And Walking Discovery
+
+1. Create a Geoapify account and choose its no-card free tier for the graduation-project demo. Supply a public map key through `GEOAPIFY_MAPS_API_KEY` in the existing local client configuration, then restart. `flutter_map` uses Geoapify `positron` and `dark-matter` raster styles. Maps do not request device-location permission.
+2. Create a separate routing key and store it as **`GEOAPIFY_ROUTING_API_KEY` in Supabase Edge Function secrets**, never in the bundled Flutter `.env`, a commit, or client code. The function also uses the Supabase-provided `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` environment values.
+3. After reviewing the target project and applying `007`, deploy the function with the Supabase CLI. Keep JWT verification enabled; the handler also verifies the user, persisted landlord role and listing ownership. The privileged key is used only for the narrow cache-write RPC, not direct table access.
+
+```powershell
+supabase functions deploy refresh-listing-routes --project-ref YOUR_PROJECT_REF
+```
+
+- Map tiles and walking calculations consume provider credits. Monitor the free-tier dashboard, apply supported key restrictions, and do not enable paid fallback or assume unlimited usage. The map key is public client configuration, not an authorization boundary.
+- The 16 supplied Egyptian university records are reference locations, **not verified entrances**. Names, cities and coordinates are preserved. Review actual pedestrian access before a demo; an endpoint snapped more than 100 metres from its pin is not advertised as a usable route.
+- Landlords confirm a pin locally, then Save persists the listing and calculates missing walking connections. A routing failure leaves the saved property intact and exposes Retry. Publishing discloses the exact pin publicly. New publications require a pin; legacy address-only publications remain stored but are excluded from walking discovery until repaired.
+- Existing listings with coordinates need their owner to open the editor and select **Refresh walking connections** to populate the new cache. Administrator changes to university pins similarly require refreshing affected listings. Old coordinate snapshots are hidden immediately rather than shown as current.
+- Refresh fills missing/stale connections, reusing current outcomes to conserve quota. There is no scheduled expiry or automatic refresh for changes to the provider's pedestrian network. Deliberate recalculation of a current outcome requires administrator cache maintenance or a reviewed routing-version change. Expanding beyond the 16-location demo catalogue also requires reviewing the function and writer batch limits.
+- Students choose a university in Explore. The query includes only published properties with a current usable walking route of at most 10,000 metres, sorted by unrounded distance then listing ID before pagination. All published bed-availability states are shown honestly. Selection is stored as `university_selection_v1:<userId>` on this device; it is not a verified enrolment or a cross-device profile preference.
+- Photo uploads, amenity/house-rule editors, saved properties, broader filters and map-wide browsing remain outside the agreed lean listing/discovery release. Booking requests are now implemented separately by M7. Details do not fabricate unavailable fields or features.
+- After repairing legacy published rows, an administrator may validate the new constraint: `alter table public.listings validate constraint listings_published_pin;`. Do not delete or unpublish existing data as a shortcut.
+
+The authenticated endpoint accepts only `{ "listing_id": "UUID" }`. It derives coordinates from the database, considers all active universities within a conservative 11 km candidate envelope, and requests shortest metric walking routes. The 11 km prefilter is **not** the displayed distance or final cutoff. Stale backend completions are rejected under database locks. Parallel Edge isolates may duplicate a provider request, but cannot overwrite an already-current result.
+
+### Booking Requests
+
+- Students request one bed from a published per-bed property, optionally include a message of at most 2,000 Unicode code points, and track requests in the Requests tab. Per-room and whole-property allocation remains deliberately unsupported.
+- Landlords open Booking requests from their listing dashboard. The inbox starts with pending requests; acceptance and rejection require confirmation. Students may cancel pending or accepted requests, with an explicit warning that cancelling an accepted request releases its bed.
+- `submit_booking` records the original rent, currency, pricing unit and capacity snapshot. Later listing edits never rewrite that quote. Current availability is displayed separately and refreshed after actions. Pending requests occupy no beds; `accept_booking` claims one bed and accepted `cancel_booking` releases it. Clients never write status, occupancy or resident rows directly.
+- A student's request history uses a left listing join, so an archived/inaccessible property does not erase the request or prevent permitted cancellation. Only its original quote and request information remain visible. Landlord views do not fetch private student profile names, phone numbers, email addresses or lifestyle answers.
+- Lost write responses are uncertain, not failures that can be retried with a new ID. Submission keeps the same request ID and frozen message; decision retries repeat the same action. Reload reconciles with the server. Leaving an uncertain submission warns the student to check Requests; this is not an offline submission queue.
+- All booking requests resolve and validate the expected SDK account before dispatch and bind its bearer token only to that request. Session persistence/refresh stays with the SDK. Account-keyed state and post-response checks prevent an old request or refresh from appearing under a replacement account.
 
 ### Profile Editing And Avatars
 
@@ -138,13 +173,24 @@ Use accounts and data you control. These checks must be performed on your projec
 - Verify another student, a landlord and an anonymous client cannot read or write the student's preference snapshot or private state. Direct answer writes must fail after `005`.
 - Upgrade with an old device-only draft. Sign-in must not upload it. Review it in the quiz and confirm only an explicit save/skip imports it; cancelled navigation, failed requests and account switching must not lose or cross-copy answers.
 - Check quiz toolbar and system Back while dirty and while saving, rapid selections, reduced motion, Arabic/English large text, and actual scrolling/transitions on target devices in profile mode.
+- Create and edit a landlord property, cancel and confirm map selection, save a private draft, acknowledge exact-pin publication, and archive/return to draft. Check that another landlord cannot write it and a student cannot refresh its routes or forge cached distances.
+- Test walking routes around the actual university pins and property entrances used in the demo. Include one property near more than one university, a route near the 10 km boundary, an unreachable route, and a changed pin while calculation is in flight. Provider coverage and gates must be checked on the ground; these are not navigation/safety guarantees.
+- Select and switch universities as a student. Verify nearest-first results across pages, per-account remembered selection, public details and unavailable private/archived deep links. No routing-provider request should run during student searches.
+- Test missing/invalid map credentials, missing function deployment, quota errors, offline tiles and failed routing. Existing coordinates and saved listings must survive. Compare two-device listing edits and real concurrent cache writes on hosted PostgreSQL.
+- Submit a per-bed request with and without a message. Confirm it is pending, consumes no capacity, appears only to its student and the listing owner, and retains its submitted quote after a rent edit. Per-room/whole-property requests and direct status/occupancy writes must fail.
+- Accept and reject from the landlord inbox, then refresh the student's Requests tab. Cancel pending and accepted requests and verify only accepted cancellation releases a bed and closes its resident link. Archive a listing and confirm the student's request/quote remains accessible without revealing the hidden listing or private profiles.
+- Use separate native PostgreSQL connections for last-bed acceptance, accept/cancel, duplicate-submit and listing capacity/archive races. Check statuses, occupancy and resident links together; a stale decision must not resurrect a rejected/cancelled request. The race guidance in `002` describes these checks, but its full legacy verifier must not be rerun after the upgrades noted above.
+- Simulate losing a submit/decision response after commit. Reload or retry the exact attempt and verify there is no duplicate request or extra capacity change. Test both Back paths while editing, busy and uncertain; leaving must never submit implicitly.
+- Switch accounts while a booking read/write or expired-token refresh is pending. No old message or result may appear in the replacement account, and no delayed request may use its credentials. Verify the same account can still refresh an expired token and submit normally.
+- Check booking cards, status transitions, confirmation dialogs, keyboard-visible messages and narrow/large-text English/Arabic layouts on devices in both themes, with reduced motion on and off. Profile-mode device measurements, not widget tests, establish frame-rate behavior.
 
 ## 5. Current Feature Boundaries
 
 - Account sign-in, confirmation, reset, profile-backed roles, and logout are implemented.
 - Profile editing and private avatars are implemented. The migration and app tests have been run locally; hosted Storage HTTP, device picking, and frame-rate measurements still need the live/device checks above.
 - Milestone 4.5 cloud preference sync is implemented with atomic answer/onboarding saves, private student-only access, conflict protection and reviewed local-draft import. Hosted RPC/RLS and cross-device acceptance still need the checks above after deploying `005`.
-- Discovery and the landlord workspace are honest landing shells. Listing management, real discovery/map queries, booking screens, and compatibility summaries are later milestones.
+- Milestones 5 and 6 implement the agreed lean landlord listing and university-based discovery flows. Page bindings and Cubits are separate from replaceable views, shared housing components and the map renderer. Hosted map/route/device acceptance remains required.
+- Milestone 7 implements student request submission/history/cancellation and landlord review/acceptance/rejection over the existing RPCs, with immutable quotes, safe retries and account isolation. Hosted booking/RLS/concurrency and physical-device acceptance remain required. Compatibility summaries are next (M9); M8 preferences are already covered by M4.5.
 - The database supports explicit price units and currency. Booking RPCs currently support `per_bed` only; room/property booking allocation is deliberately rejected until its model is implemented.
 - Pending requests do not occupy beds. Acceptance/cancellation use locked database operations. Client code must not write occupied-bed counters or booking status directly.
 - Listing photo objects use `listing-photos`; profile photos use `profile-avatars`. Both are private. Follow each SQL file's path and access rules; do not use public URLs.
@@ -162,12 +208,21 @@ flutter test
 flutter run
 ```
 
-Localization tests read the actual English/Arabic assets. Auth tests use mocked SDK transport and repositories, without live credentials.
+Localization tests read the actual English/Arabic assets. App tests use mocked SDK transport and repositories, without live credentials. Map tests inject image providers rather than contacting tile servers. Edge checks can be run with Deno 2 (initial package resolution needs network, test transport does not):
+
+```powershell
+deno task --cwd supabase/functions/refresh-listing-routes check
+deno task --cwd supabase/functions/refresh-listing-routes test
+```
+
+The new SQL verifier passed 183 assertions in isolated embedded PostgreSQL with Auth/Storage stubs. The Edge handler passed 19 fake-transport groups with runtime network/environment/filesystem access denied. These checks do not prove hosted PostgREST/JWT configuration, real provider coverage, or two-connection race behavior.
 
 Milestone 4.5 local verification on 2026-10-18: clean analysis and **149 passing Flutter tests**. The `001 -> 006` SQL sequence also passed in isolated PGlite 0.5.10 / PostgreSQL 18.6: 115 foundation, 53 avatar, 216 preference assertions and 21 supplemental migration checks; avatar verification was repeated after `005`. Only Supabase roles/Auth/Storage metadata were mocked, with no extension shims. This is not hosted PostgREST/JWT validation or a native concurrent-race test; keep those live checks separate.
 
+Milestone 7 local verification on 2026-10-31: `flutter pub get` and localization generation succeeded, analysis is clean, the milestone formatting check passes, and **399 Flutter tests pass**, including **101 booking model/service/state/UI tests**. Review fixes were re-reviewed and cover the token-refresh account-switch race, stale landlord decisions, onboarding integration and normal/reduced-motion behavior. No SQL/Edge checks were rerun, hosted requests made, or physical-device performance measured during this continuation.
+
 ## 7. Platform Features
 
-No native configuration was changed. Internet access is required for live Supabase requests. The avatar feature uses the existing `image_picker` gallery picker; no camera feature was added. Check the package's iOS photo-library usage-description requirements before an iOS device build, and verify cancelled/denied selection on supported devices. Maps, store releases, and optional deep links remain separate setup work. Do not replace the entire Podfile or manifest to add a single permission.
+No native configuration was changed. Internet access is required for live Supabase, tiles and server-side routing. Confirm network access in the actual release-mode device build; manual map selection needs no location/GPS permission. The avatar feature uses the existing `image_picker` gallery picker; no camera feature was added. Check the package's iOS photo-library usage-description requirements before an iOS device build, and verify cancelled/denied selection on supported devices. Store releases and optional external deep links remain separate setup work. Do not replace the entire Podfile or manifest to add a single permission.
 
 Keep the personal progress checklist in `MILESTONES.md`; it is intentionally local and ignored by Git.

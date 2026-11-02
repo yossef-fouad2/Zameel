@@ -14,6 +14,10 @@ dependencies:
   # Navigation
   go_router: ^17.1.0
 
+  # Maps
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+
   # Networking
   internet_connection_checker_plus: ^2.9.1+2
 

@@ -22,4 +22,12 @@ abstract final class AppRoutes {
   static const String sessionError = '/auth/session-error';
   static const String account = '/account';
   static const String landlord = '/landlord';
+  static const String listingCreate = '/landlord/listings/new';
+  static const String listingEdit = '/landlord/listings/:listingId/edit';
+  static const String propertyLocation = '/landlord/location';
+  static const String listingDetails = '/student/listings/:listingId';
+  static const String bookingRequest = '/student/listings/:listingId/request';
+  static const String studentBookingDetails = '/student/requests/:bookingId';
+  static const String landlordBookings = '/landlord/requests';
+  static const String landlordBookingDetails = '/landlord/requests/:bookingId';
 }
