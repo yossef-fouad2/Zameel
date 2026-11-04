@@ -629,7 +629,14 @@ void main() {
           request.url.path.endsWith('/refresh-listing-routes')
               ? response(
                   request,
-                  {'code': entry.key, 'message': 'Not for display'},
+                  {
+                    'code': entry.key,
+                    'message': 'Not for display',
+                    if (entry.key == 'refresh_timeout') ...{
+                      'stage': 'geoapify',
+                      'request_id': '6f2511d3-0208-43ce-9307-eb0ef4c7b970',
+                    },
+                  },
                   entry.value.$1)
               : defaultResponse(request);
       final result =

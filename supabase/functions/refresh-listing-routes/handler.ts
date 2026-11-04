@@ -5,7 +5,8 @@ export const ROUTING_VERSION = "geoapify-walk-short-metric-snap100-v1";
 export const CANDIDATE_RADIUS_M = 11_000;
 export const MAX_SNAP_M = 100;
 const MAX_UNIVERSITIES = 16;
-const DEFAULT_TIMEOUT_MS = 20_000;
+// Includes Auth, database reads, routing and the cache write; Flutter allows 60s.
+const DEFAULT_TIMEOUT_MS = 45_000;
 const MATRIX_URL = "https://api.geoapify.com/v1/routematrix";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const corsHeaders = {
@@ -46,11 +47,61 @@ export interface RefreshConfig {
 interface HandlerOptions {
   fetch?: typeof fetch;
   timeoutMs?: number;
+  log?: (diagnostic: RefreshDiagnostic) => void;
+}
+
+type RefreshStage =
+  | "request"
+  | "authentication"
+  | "profile"
+  | "listing"
+  | "route_cache"
+  | "geoapify"
+  | "cache_write"
+  | "shared_refresh";
+
+export interface RefreshDiagnostic {
+  event: "listing_routes_refresh";
+  request_id: string;
+  stage: RefreshStage;
+  status: number;
+  code: string;
+  elapsed_ms: number;
+  timings_ms: Partial<Record<RefreshStage, number>>;
 }
 
 class SafeError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly stage?: RefreshStage,
+  ) {
     super(message);
+  }
+}
+
+type RunStage = <T>(stage: RefreshStage, action: () => PromiseLike<T>) => Promise<T>;
+
+// A signal passed to fetch alone does not bound SDK waits, body reads or a
+// coalesced caller. Race the whole operation and stop before any subsequent IO.
+async function untilAborted<T>(signal: AbortSignal, action: () => PromiseLike<T>): Promise<T> {
+  signal.throwIfAborted();
+  const aborted = Promise.withResolvers<never>();
+  const onAbort = () => aborted.reject(signal.reason);
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(() => {
+        signal.throwIfAborted();
+        return action();
+      }),
+      aborted.promise,
+    ]);
+    signal.throwIfAborted();
+    return result;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -248,6 +299,16 @@ function matrixRoutes(value: unknown, source: Point, targets: University[]): Rou
 
 export function createRefreshHandler(config: RefreshConfig, options: HandlerOptions = {}) {
   const transport = options.fetch ?? fetch;
+  const log = (diagnostic: RefreshDiagnostic): boolean => {
+    try {
+      if (options.log) options.log(diagnostic);
+      else console.info(JSON.stringify(diagnostic));
+      return true;
+    } catch {
+      // Failed diagnostics must not replace the HTTP result or leak sink errors.
+      return false;
+    }
+  };
   // Coalesce same-pin submissions within this isolate. Separate isolates may
   // both calculate; the locked SQL writer never replaces a current result.
   const inFlight = new Map<string, Promise<void>>();
@@ -262,9 +323,35 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
         message: "Use POST to refresh walking distances.",
       });
     }
+    const requestId = crypto.randomUUID();
+    const started = performance.now();
+    let stage: RefreshStage = "request";
+    let status = 200;
+    let code = "complete";
+    const timings: RefreshDiagnostic["timings_ms"] = {};
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () =>
+        controller.abort(
+          new SafeError(
+            504,
+            "refresh_timeout",
+            "Walking distance refresh timed out. Try again later.",
+            stage,
+          ),
+        ),
+      options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    );
     const { signal } = controller;
+    const run: RunStage = async (name, action) => {
+      stage = name;
+      const start = performance.now();
+      try {
+        return await untilAborted(signal, action);
+      } finally {
+        timings[name] = Math.round(performance.now() - start);
+      }
+    };
     try {
       const authorization = request.headers.get("Authorization")?.match(/^Bearer ([^\s]+)$/i);
       if (!authorization) {
@@ -280,16 +367,17 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
           "Send a JSON object containing only listing_id.",
         );
       }
-      const body = await readJson(
-        request.body,
-        1024,
-        signal,
-        new SafeError(
-          400,
-          "invalid_request",
-          "Send a JSON object containing only a valid listing_id.",
-        ),
-      );
+      const body = await run("request", () =>
+        readJson(
+          request.body,
+          1024,
+          signal,
+          new SafeError(
+            400,
+            "invalid_request",
+            "Send a JSON object containing only a valid listing_id.",
+          ),
+        ));
       if (
         !record(body) || Object.keys(body).length !== 1 || typeof body.listing_id !== "string" ||
         !UUID.test(body.listing_id)
@@ -309,14 +397,22 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
       }
       const listingId = body.listing_id.toLowerCase();
       const token = authorization[1];
-      const boundedFetch: typeof fetch = (input, init) =>
-        transport(input, { ...init, signal, redirect: "error" });
+      const boundedFetch: typeof fetch = async (input, init) => {
+        // SDK initialization can finish after the enclosing stage timed out.
+        signal.throwIfAborted();
+        const result = await transport(input, { ...init, signal, redirect: "error" });
+        if (signal.aborted) {
+          await result.body?.cancel();
+          signal.throwIfAborted();
+        }
+        return result;
+      };
       const caller = createClient(config.supabaseUrl, config.anonKey, {
         global: { headers: { Authorization: `Bearer ${token}` }, fetch: boundedFetch },
         db: { retry: false },
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       });
-      const identity = await caller.auth.getUser(token);
+      const identity = await run("authentication", () => caller.auth.getUser(token));
       if (identity.error || !identity.data.user) {
         if (
           identity.error && identity.error.status !== 401 && identity.error.status !== 403 &&
@@ -332,8 +428,9 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
       }
       const userId = identity.data.user.id;
       const profile: unknown = databaseResult(
-        await caller.from("profiles").select("id,role")
-          .eq("id", userId).maybeSingle(),
+        await run("profile", () =>
+          caller.from("profiles").select("id,role")
+            .eq("id", userId).maybeSingle()),
       );
       if (!record(profile) || profile.id !== userId || profile.role !== "landlord") {
         throw new SafeError(
@@ -343,9 +440,13 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
         );
       }
       const listing: unknown = databaseResult(
-        await caller.from("listings")
-          .select("id,landlord_id,latitude,longitude").eq("id", listingId).eq("landlord_id", userId)
-          .maybeSingle(),
+        await run("listing", () =>
+          caller.from("listings")
+            .select("id,landlord_id,latitude,longitude").eq("id", listingId).eq(
+              "landlord_id",
+              userId,
+            )
+            .maybeSingle()),
       );
       if (!record(listing) || listing.id !== listingId || listing.landlord_id !== userId) {
         throw new SafeError(
@@ -366,39 +467,55 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
       const key = `${userId}:${listingId}:${source.latitude}:${source.longitude}`;
       let pending = inFlight.get(key);
       if (!pending) {
-        pending = refresh(caller, boundedFetch, userId, listingId, source, signal);
+        pending = refresh(caller, boundedFetch, userId, listingId, source, signal, run)
+          .catch((error) => {
+            // Followers must see the leader's classified failure, not an SDK
+            // AbortError remapped to an unrelated provider/database failure.
+            if (signal.aborted) throw signal.reason;
+            if (error instanceof SafeError) {
+              throw new SafeError(error.status, error.code, error.message, error.stage ?? stage);
+            }
+            throw error;
+          }).finally(() => {
+            // Only the shared operation may remove itself. A timed-out waiter
+            // must not evict live work and allow a duplicate provider request.
+            if (inFlight.get(key) === pending) inFlight.delete(key);
+          });
         inFlight.set(key, pending);
-      }
-      try {
+        // Stages already enforce the leader's deadline. Settle their timing and
+        // shared-entry cleanup before serializing this request's diagnostic.
         await pending;
-      } finally {
-        if (inFlight.get(key) === pending) inFlight.delete(key);
-      }
-      if (signal.aborted) {
-        throw new SafeError(
-          504,
-          "refresh_timeout",
-          "Walking distance refresh timed out. Try again later.",
-        );
+      } else {
+        await run("shared_refresh", () => pending!);
       }
       return response(200, { status: "complete" });
     } catch (error) {
-      if (signal.aborted) {
-        return response(504, {
-          code: "refresh_timeout",
-          message: "Walking distance refresh timed out. Try again later.",
-        });
-      }
-      if (error instanceof SafeError) {
-        return response(error.status, { code: error.code, message: error.message });
-      }
       // No raw exception logging: SDK/provider errors may contain JWTs or keys.
-      return response(503, {
-        code: "refresh_unavailable",
-        message: "Walking distances are temporarily unavailable.",
+      const cause = signal.aborted ? signal.reason : error;
+      const safe = cause instanceof SafeError ? cause : new SafeError(
+        503,
+        "refresh_unavailable",
+        "Walking distances are temporarily unavailable.",
+      );
+      stage = safe.stage ?? stage;
+      status = safe.status;
+      code = safe.code;
+      return response(status, {
+        code,
+        message: safe.message,
+        ...(code === "refresh_timeout" ? { stage, request_id: requestId } : {}),
       });
     } finally {
       clearTimeout(timeout);
+      log({
+        event: "listing_routes_refresh",
+        request_id: requestId,
+        stage,
+        status,
+        code,
+        elapsed_ms: Math.round(performance.now() - started),
+        timings_ms: { ...timings },
+      });
     }
   };
 
@@ -409,16 +526,18 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
     listingId: string,
     source: Point,
     signal: AbortSignal,
+    run: RunStage,
   ): Promise<void> {
-    const [universityResult, cacheResult] = await Promise.all([
-      caller.from("universities").select("id,latitude,longitude,is_active").eq("is_active", true)
-        .order("id").limit(MAX_UNIVERSITIES + 1),
-      caller.from("listing_university_routes").select(
-        "listing_id,university_id,status,distance_m,calculated_at,listing_latitude,listing_longitude," +
-          "university_latitude,university_longitude,routing_version,matched_source_latitude," +
-          "matched_source_longitude,matched_target_latitude,matched_target_longitude",
-      ).eq("listing_id", listingId).limit(MAX_UNIVERSITIES + 1),
-    ]);
+    const [universityResult, cacheResult] = await run("route_cache", () =>
+      Promise.all([
+        caller.from("universities").select("id,latitude,longitude,is_active").eq("is_active", true)
+          .order("id").limit(MAX_UNIVERSITIES + 1),
+        caller.from("listing_university_routes").select(
+          "listing_id,university_id,status,distance_m,calculated_at,listing_latitude,listing_longitude," +
+            "university_latitude,university_longitude,routing_version,matched_source_latitude," +
+            "matched_source_longitude,matched_target_latitude,matched_target_longitude",
+        ).eq("listing_id", listingId).limit(MAX_UNIVERSITIES + 1),
+      ]));
     const universities = universitiesFrom(databaseResult(universityResult));
     const cache: unknown = databaseResult(cacheResult);
     if (!Array.isArray(cache)) {
@@ -444,101 +563,122 @@ export function createRefreshHandler(config: RefreshConfig, options: HandlerOpti
       );
     }
 
-    let provider: Response;
-    try {
-      provider = await boundedFetch(MATRIX_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-        body: JSON.stringify({
-          mode: "walk",
-          type: "short",
-          units: "metric",
-          sources: [{ location: [source.longitude, source.latitude] }],
-          targets: missing.map((university) => ({
-            location: [university.longitude, university.latitude],
-          })),
-        }),
-      });
-    } catch {
-      throw new SafeError(
-        502,
-        "routing_unavailable",
-        "Walking distance routing is temporarily unavailable.",
-      );
-    }
-    if (!provider.ok) await provider.body?.cancel();
-    if (provider.status === 429 || provider.status === 402) {
-      throw new SafeError(
-        429,
-        "routing_quota_exceeded",
-        "The routing limit has been reached. Try again later.",
-      );
-    }
-    if (provider.status === 401 || provider.status === 403) {
-      throw new SafeError(
-        503,
-        "routing_not_configured",
-        "Walking distance routing is not available.",
-      );
-    }
-    if (!provider.ok) {
-      throw new SafeError(
-        502,
-        "routing_unavailable",
-        "Walking distance routing is temporarily unavailable.",
-      );
-    }
-    const routes = matrixRoutes(
-      await readJson(
-        provider.body,
-        65_536,
-        signal,
-        new SafeError(
+    const routes = await run("geoapify", async () => {
+      let provider: Response;
+      try {
+        provider = await boundedFetch(MATRIX_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+          body: JSON.stringify({
+            mode: "walk",
+            type: "short",
+            units: "metric",
+            sources: [{ location: [source.longitude, source.latitude] }],
+            targets: missing.map((university) => ({
+              location: [university.longitude, university.latitude],
+            })),
+          }),
+        });
+      } catch {
+        throw new SafeError(
           502,
-          "routing_invalid_response",
-          "The routing provider returned unusable data.",
+          "routing_unavailable",
+          "Walking distance routing is temporarily unavailable.",
+        );
+      }
+      if (!provider.ok) await provider.body?.cancel();
+      if (provider.status === 429 || provider.status === 402) {
+        throw new SafeError(
+          429,
+          "routing_quota_exceeded",
+          "The routing limit has been reached. Try again later.",
+        );
+      }
+      if (provider.status === 401 || provider.status === 403) {
+        throw new SafeError(
+          503,
+          "routing_not_configured",
+          "Walking distance routing is not available.",
+        );
+      }
+      if (!provider.ok) {
+        throw new SafeError(
+          502,
+          "routing_unavailable",
+          "Walking distance routing is temporarily unavailable.",
+        );
+      }
+      return matrixRoutes(
+        await readJson(
+          provider.body,
+          65_536,
+          signal,
+          new SafeError(
+            502,
+            "routing_invalid_response",
+            "The routing provider returned unusable data.",
+          ),
         ),
-      ),
-      source,
-      missing,
-    );
-    // The privileged client is used ONLY for this RPC, never a table read/write.
-    const writer = createClient(config.supabaseUrl, config.serviceRoleKey, {
-      global: { fetch: boundedFetch },
-      db: { retry: false },
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    });
-    const result = await writer.rpc("write_listing_university_routes", {
-      p_listing_id: listingId,
-      p_landlord_id: userId,
-      p_listing_latitude: source.latitude,
-      p_listing_longitude: source.longitude,
-      p_routing_version: ROUTING_VERSION,
-      p_routes: routes,
-    });
-    if (result.error?.code === "40001") {
-      throw new SafeError(
-        409,
-        "route_snapshot_stale",
-        "The property or university pin changed. Reload before retrying.",
+        source,
+        missing,
       );
-    }
-    if (result.error?.code === "42501") {
-      throw new SafeError(
-        403,
-        "listing_not_accessible",
-        "This property is unavailable to this account.",
-      );
-    }
-    if (
-      result.error || !Number.isInteger(result.data) || result.data < 0 ||
-      result.data > routes.length
-    ) {
-      throw new SafeError(
+    });
+    await run("cache_write", async () => {
+      const failed = new SafeError(
         503,
         "cache_write_failed",
         "The property is saved, but walking distances could not be stored.",
       );
-    }
+      let result: Response;
+      try {
+        // This credential has no user session to initialize or refresh. The
+        // regular SDK fetch waits for Auth.getSession() even for service-role
+        // RPCs. Send ONLY this guarded RPC directly, never a privileged table IO.
+        result = await boundedFetch(
+          `${config.supabaseUrl.replace(/\/+$/, "")}/rest/v1/rpc/write_listing_university_routes`,
+          {
+            method: "POST",
+            headers: {
+              apikey: config.serviceRoleKey,
+              Authorization: `Bearer ${config.serviceRoleKey}`,
+              "Content-Type": "application/json",
+              "Content-Profile": "public",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              p_listing_id: listingId,
+              p_landlord_id: userId,
+              p_listing_latitude: source.latitude,
+              p_listing_longitude: source.longitude,
+              p_routing_version: ROUTING_VERSION,
+              p_routes: routes,
+            }),
+          },
+        );
+      } catch {
+        throw failed;
+      }
+      const data = await readJson(result.body, 16_384, signal, failed);
+      if (!result.ok) {
+        if (record(data) && (data.code === "PT409" || data.code === "40001")) {
+          throw new SafeError(
+            409,
+            "route_snapshot_stale",
+            "The property or university pin changed. Reload before retrying.",
+          );
+        }
+        if (record(data) && data.code === "42501") {
+          throw new SafeError(
+            403,
+            "listing_not_accessible",
+            "This property is unavailable to this account.",
+          );
+        }
+        throw failed;
+      }
+      if (typeof data !== "number" || !Number.isInteger(data) || data < 0 || data > routes.length) {
+        throw failed;
+      }
+    });
   }
 }

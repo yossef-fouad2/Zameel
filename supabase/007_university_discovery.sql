@@ -36,6 +36,7 @@
 -- 42501/route_write_not_authorized rejects a changed owner/persisted role.
 -- Only service_role can execute it, with NO grants on any existing tables.
 
+-- Apply 009 after this installer for lossless Data API coordinate transport.
 begin;
 set local search_path = pg_catalog;
 select pg_catalog.pg_advisory_xact_lock(20261016, 120026);
@@ -259,7 +260,8 @@ begin
       end if;
       if v_listing.latitude is distinct from p_listing_latitude
          or v_listing.longitude is distinct from p_listing_longitude then
-        raise exception using errcode = '40001', message = 'route_snapshot_stale';
+        -- Application conflicts must not trigger PostgREST's serialization retries.
+        raise exception using errcode = 'PT409', message = 'route_snapshot_stale';
       end if;
 
       for v_route in select value from pg_catalog.jsonb_array_elements(p_routes) loop
@@ -301,7 +303,7 @@ begin
         if not found or not v_university.is_active
            or v_university.latitude is distinct from v_row.university_latitude
            or v_university.longitude is distinct from v_row.university_longitude then
-          raise exception using errcode = '40001', message = 'route_snapshot_stale';
+          raise exception using errcode = 'PT409', message = 'route_snapshot_stale';
         end if;
         if v_row.status not in ('ready', 'unroutable', 'needs_pin_review')
            or (v_row.matched_source_latitude is null) <> (v_row.matched_source_longitude is null)

@@ -1,4 +1,4 @@
--- Rollback-only verification AFTER 007, as administrator in a QUIET, ISOLATED
+-- Rollback-only verification AFTER 007 AND 009, as administrator in a QUIET, ISOLATED
 -- DEVELOPMENT database. Run the WHOLE file; NEVER replace ROLLBACK with COMMIT.
 -- After any failure issue ROLLBACK before more SQL. Do not use production or
 -- external Auth/database hooks whose side effects cannot be rolled back.
@@ -22,12 +22,14 @@
 -- Real two-connection race check: keep a writer transaction open after its call;
 -- a second writer for the same listing must wait (or hit its bounded lock timeout),
 -- then retain the first current row/timestamp. Pin/catalogue edits must serialize
--- with those locks; a response using old snapshots after an edit must fail 40001.
+-- with those locks; a response using old snapshots after an edit must fail PT409.
 -- This single-session verifier checks replay/obsolete completions, not scheduling
 -- across two connections. Hosted JWT/PostgREST, provider coverage and actual
 -- pedestrian entrances remain separate deployment acceptance checks.
 
 begin;
+-- SET ROLE alone does not apply the per-request GUCs loaded by PostgREST.
+set local extra_float_digits = 1;
 set local search_path = pg_catalog;
 set local timezone = 'UTC';
 
@@ -145,7 +147,7 @@ select pg_temp.ud_assert('service-role existing table denial preserved',
           and a.attnum > 0 and not a.attisdropped
           and pg_catalog.has_column_privilege('service_role', c.oid, a.attnum, 'SELECT,INSERT,UPDATE,REFERENCES')))));
 select pg_temp.ud_assert('new routines pin an empty search_path and revoke PUBLIC',
-  (select count(*) = 3 and bool_and(p.proconfig @> array['search_path=""'])
+  (select count(*) = 3 and bool_and(coalesce(p.proconfig @> array['search_path=""'], false))
    from pg_catalog.pg_proc p where p.oid in (
      'public.search_listings_by_university(integer,double precision,uuid,integer)'::regprocedure,
      'public.write_listing_university_routes(uuid,uuid,double precision,double precision,text,jsonb)'::regprocedure,
@@ -165,11 +167,23 @@ select pg_temp.ud_assert('search is SECURITY INVOKER/STABLE with exact named arg
   and pg_catalog.has_function_privilege('anon', 'public.search_listings_by_university(integer,double precision,uuid,integer)', 'EXECUTE')
   and pg_catalog.has_function_privilege('authenticated', 'public.search_listings_by_university(integer,double precision,uuid,integer)', 'EXECUTE'));
 select pg_temp.ud_assert('only service_role can execute the narrow SECURITY DEFINER cache writer',
-  (select prosecdef from pg_catalog.pg_proc
+  (select prosecdef and provolatile = 'v' and not proretset
+      and prorettype = 'integer'::regtype and pronargdefaults = 0
+      and proargnames = array['p_listing_id','p_landlord_id','p_listing_latitude',
+        'p_listing_longitude','p_routing_version','p_routes']
+      and proconfig @> array['lock_timeout=2s']
+    from pg_catalog.pg_proc
    where oid = 'public.write_listing_university_routes(uuid,uuid,double precision,double precision,text,jsonb)'::regprocedure)
   and pg_catalog.has_function_privilege('service_role', 'public.write_listing_university_routes(uuid,uuid,double precision,double precision,text,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.write_listing_university_routes(uuid,uuid,double precision,double precision,text,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('authenticated', 'public.write_listing_university_routes(uuid,uuid,double precision,double precision,text,jsonb)', 'EXECUTE'));
+
+select pg_temp.ud_assert('009 preserves full float precision for every Data API role',
+  (select count(*) = 3 and bool_and(coalesce(rolconfig @> array['extra_float_digits=1'], false))
+   from pg_catalog.pg_roles where rolname in ('anon','authenticated','service_role')));
+select pg_temp.ud_assert('API JSON round-trips preserve exact pins and distance cursors',
+  (select bool_and(v = (pg_catalog.to_jsonb(v)::text)::double precision)
+   from unnest(array[30.123456789012345,31.234567890123457,1234.5678901234567]::double precision[]) as sample(v)));
 select pg_temp.ud_assert('university-distance-id index supports keyset discovery',
   exists (select 1 from pg_catalog.pg_index i
     where i.indexrelid = 'public.listing_university_routes_discovery_idx'::regclass
@@ -443,12 +457,12 @@ select pg_temp.ud_error('writer rechecks owner, not a supplied claim',
 select pg_temp.ud_error('old listing snapshot completion fails closed',
   $$select public.write_listing_university_routes(pg_temp.ud_id('write_target'),pg_temp.ud_id('owner'),
     30.0277,31.21014,'geoapify-walk-short-metric-snap100-v1',jsonb_build_array(pg_temp.ud_route()))$$,
-  '40001','route_snapshot_stale');
+  'PT409','route_snapshot_stale');
 select pg_temp.ud_error('one stale university invalidates whole batch',
   $$select public.write_listing_university_routes(pg_temp.ud_id('write_atomic'),pg_temp.ud_id('owner'),
     30.0276,31.21014,'geoapify-walk-short-metric-snap100-v1',jsonb_build_array(
       pg_temp.ud_route(2147483646),pg_temp.ud_route()||'{"university_latitude":30.1}'::jsonb))$$,
-  '40001','route_snapshot_stale');
+  'PT409','route_snapshot_stale');
 
 do $writer_validation$
 declare
@@ -548,7 +562,7 @@ set local role service_role;
 select pg_temp.ud_error('late provider success cannot resurrect old listing coordinates',
   $$select public.write_listing_university_routes(pg_temp.ud_id('write_target'),pg_temp.ud_id('owner'),
     30.0276,31.21014,'geoapify-walk-short-metric-snap100-v1',jsonb_build_array(pg_temp.ud_route()))$$,
-  '40001','route_snapshot_stale');
+  'PT409','route_snapshot_stale');
 select pg_temp.ud_assert('explicit refresh can replace stale inputs with new exact snapshots',
   public.write_listing_university_routes(pg_temp.ud_id('write_target'),pg_temp.ud_id('owner'),
     30.0277,31.21014,'geoapify-walk-short-metric-snap100-v1',jsonb_build_array(
@@ -568,7 +582,7 @@ set local role service_role;
 select pg_temp.ud_error('late provider success cannot resurrect old university coordinates',
   $$select public.write_listing_university_routes(pg_temp.ud_id('write_target'),pg_temp.ud_id('owner'),
     30.0277,31.21014,'geoapify-walk-short-metric-snap100-v1',jsonb_build_array(pg_temp.ud_route()))$$,
-  '40001','route_snapshot_stale');
+  'PT409','route_snapshot_stale');
 reset role;
 update public.universities set latitude=30.0276,is_active=false where id=2147483647;
 set local role anon;
@@ -581,7 +595,7 @@ set local role service_role;
 select pg_temp.ud_error('inactive target rejects backend completion',
   $$select public.write_listing_university_routes(pg_temp.ud_id('write_target'),pg_temp.ud_id('owner'),
     30.0277,31.21014,'geoapify-walk-short-metric-snap100-v1',jsonb_build_array(pg_temp.ud_route()))$$,
-  '40001','route_snapshot_stale');
+  'PT409','route_snapshot_stale');
 reset role;
 update public.universities set is_active=true where id=2147483647;
 set local role authenticated;

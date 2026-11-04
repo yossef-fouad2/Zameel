@@ -36,12 +36,13 @@ Use [supabase/001_marketplace_setup.sql](supabase/001_marketplace_setup.sql), **
 7. Run [supabase/005_lifestyle_sync.sql](supabase/005_lifestyle_sync.sql) for milestone 4.5. The updated student flow calls its preference RPCs, so apply it before using this app version.
 8. In development, run [supabase/006_lifestyle_sync_verify.sql](supabase/006_lifestyle_sync_verify.sql). It checks private atomic saves, revision conflicts, skip/completion metadata and validation with rolled-back fixtures.
 9. Run [supabase/007_university_discovery.sql](supabase/007_university_discovery.sql) for milestones 5 and 6. It adds the supplied university catalogue, protected walking-route cache, discovery RPC, and published-pin requirement.
-10. In development, run [supabase/008_university_discovery_verify.sql](supabase/008_university_discovery_verify.sql). Its fixtures roll back and cover publication, cache privacy/invalidation, trusted writes, ordering and pagination.
-11. Keep `zameel_private` out of the API's exposed schemas and do not add broad permissive policies/grants to the application tables.
+10. Run [supabase/009_route_snapshot_transport.sql](supabase/009_route_snapshot_transport.sql). It enables lossless float serialization for the Data API roles and makes stale route snapshots non-retryable HTTP 409 conflicts. It preserves existing pins, cache rows and permissions; rerunning `007` does not perform this upgrade.
+11. In development, run [supabase/008_university_discovery_verify.sql](supabase/008_university_discovery_verify.sql) after `009`. Its fixtures roll back and cover publication, cache privacy/invalidation, trusted writes, lossless transport settings, ordering and pagination. Do not run this fixture/DDL-locking verifier as a production diagnostic.
+12. Keep `zameel_private` out of the API's exposed schemas and do not add broad permissive policies/grants to the application tables.
 
 The setup creates profiles, listings, photos, amenities, house rules, optional lifestyle answers, bookings, resident links, RLS, a private photo bucket, and guarded booking RPCs. It inserts reference dictionaries only, not fake listings or users.
 
-**Already installed `001`?** Apply only missing upgrades: `003`, `005`, then `007`; do not rerun `001`. Unchanged migration reruns are checked no-ops; incompatible objects are refused rather than replaced. For a fresh disposable database, use the full order **001, 002, 003, 004, 005, 006, 007, 008**. `002` checks the old direct preference-write contract and belongs before `005`. `004` publishes an old address-only fixture and belongs before `007`. Use `006` and `008` to verify the corresponding upgraded contracts.
+**Already installed `001`?** Apply only missing upgrades: `003`, `005`, `007`, then `009`; do not rerun `001`. Unchanged migration reruns are checked no-ops; incompatible objects are refused rather than replaced. For a fresh disposable database, use the full order **001, 002, 003, 004, 005, 006, 007, 009, 008**. `002` checks the old direct preference-write contract and belongs before `005`. `004` publishes an old address-only fixture and belongs before `007`. Use `006` and `008` to verify the corresponding upgraded contracts.
 
 Milestone 7 uses the booking tables and guarded RPCs already installed by `001`; it adds no migration and does not require rerunning the installer.
 
@@ -49,10 +50,10 @@ Milestone 7 uses the booking tables and guarded RPCs already installed by `001`;
 
 1. Create a Geoapify account and choose its no-card free tier for the graduation-project demo. Supply a public map key through `GEOAPIFY_MAPS_API_KEY` in the existing local client configuration, then restart. `flutter_map` uses Geoapify `positron` and `dark-matter` raster styles. Maps do not request device-location permission.
 2. Create a separate routing key and store it as **`GEOAPIFY_ROUTING_API_KEY` in Supabase Edge Function secrets**, never in the bundled Flutter `.env`, a commit, or client code. The function also uses the Supabase-provided `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` environment values.
-3. After reviewing the target project and applying `007`, deploy the function with the Supabase CLI. Keep JWT verification enabled; the handler also verifies the user, persisted landlord role and listing ownership. The privileged key is used only for the narrow cache-write RPC, not direct table access.
+3. After reviewing the target project and applying `007` and `009`, deploy the function with the Supabase CLI. Keep JWT verification enabled; the handler also verifies the user, persisted landlord role and listing ownership. The privileged key is used only for the narrow cache-write RPC, not direct table access.
 
 ```powershell
-supabase functions deploy refresh-listing-routes --project-ref YOUR_PROJECT_REF
+supabase functions deploy refresh-listing-routes --remote=YOUR_PROJECT_REF --use-api
 ```
 
 - Map tiles and walking calculations consume provider credits. Monitor the free-tier dashboard, apply supported key restrictions, and do not enable paid fallback or assume unlimited usage. The map key is public client configuration, not an authorization boundary.
@@ -65,6 +66,14 @@ supabase functions deploy refresh-listing-routes --project-ref YOUR_PROJECT_REF
 - After repairing legacy published rows, an administrator may validate the new constraint: `alter table public.listings validate constraint listings_published_pin;`. Do not delete or unpublish existing data as a shortcut.
 
 The authenticated endpoint accepts only `{ "listing_id": "UUID" }`. It derives coordinates from the database, considers all active universities within a conservative 11 km candidate envelope, and requests shortest metric walking routes. The 11 km prefilter is **not** the displayed distance or final cutoff. Stale backend completions are rejected under database locks. Parallel Edge isolates may duplicate a provider request, but cannot overwrite an already-current result.
+
+The function has a 45-second total deadline, below Flutter's 60-second invocation timeout. It bounds SDK calls and response bodies as well as provider requests; a timed-out caller cannot evict another caller's live refresh or dispatch new work after its deadline. Function edits require redeployment; Flutter hot reload and local `config.toml` health-timeout settings do not update this budget. `--use-api` bundles on Supabase without requiring local Docker.
+
+Migration `009` is required independently of the Edge deployment. With `extra_float_digits=0`, JSON can round a stored `double precision` pin, so even a freshly read snapshot fails the writer's exact comparison. `009` sets the three Data API roles to lossless output rather than rounding or changing stored coordinates. The writer uses `PT409` for genuine stale snapshots: older PostgREST versions retry `40001` indefinitely, even when an application deliberately raises it. The migration reloads API configuration and retains all ownership, RLS and locking checks. Verify a fresh API read round-trips exactly and a stale snapshot returns HTTP 409 promptly before testing a successful owner refresh.
+
+The cache writer calls the existing `public.write_listing_university_routes` RPC directly over authenticated PostgREST HTTP. It uses the platform's service-role credential only for that endpoint, never a direct table write. This avoids constructing a second Auth-enabled SDK client and waiting on Auth initialization/session lookups for a static-credential write. Caller authentication, RLS-protected reads, snapshot validation and SQL locking remain unchanged. The writer's response body is size-limited and cancelled on timeout; HTTP errors and malformed counts never report completion.
+
+For a persistent `504 / refresh_timeout`, inspect the returned `stage` and `request_id`. Match that ID to the `listing_routes_refresh` JSON record in Edge Function Logs; it contains status, a safe error code, total elapsed milliseconds and per-stage timings, never credentials, account/listing IDs, coordinates or raw provider responses. `authentication`, `profile`, `listing` and `route_cache` identify Supabase reads; `geoapify` identifies the routing request/body; `cache_write` identifies the guarded RPC; `shared_refresh` identifies a caller waiting on another refresh. These distinguish the stalled dependency without assuming every timeout comes from Geoapify. A cache-write response can be lost after commit: retry the same saved property to reuse current cached results, not a new listing or a cleared cache. Repeated attempts can still consume provider credits when no current result was saved.
 
 ### Booking Requests
 
