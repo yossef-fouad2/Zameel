@@ -20,6 +20,18 @@ const testUniversity2 = University(
     city: 'Cairo',
     location: GeoPoint(latitude: 30.077022, longitude: 31.285017));
 const testPoint = GeoPoint(latitude: 30.0300, longitude: 31.2100);
+const testRoomOptions = [
+  ListingRoomOption(
+      type: ListingRoomType.doubleRoom,
+      roomCount: 1,
+      monthlyRent: 2000,
+      occupiedBeds: 0),
+  ListingRoomOption(
+      type: ListingRoomType.tripleRoom,
+      roomCount: 1,
+      monthlyRent: 1250,
+      occupiedBeds: 0),
+];
 
 Listing testListing(
         {String id = 'listing-1',
@@ -27,6 +39,7 @@ Listing testListing(
         String title = 'Test home',
         ListingStatus status = ListingStatus.draft,
         GeoPoint? location = testPoint,
+        List<ListingRoomOption> roomOptions = const [],
         double rent = 1250}) =>
     Listing(
         id: id,
@@ -35,12 +48,23 @@ Listing testListing(
         description: 'A test description.',
         address: 'Test address',
         location: location,
-        monthlyRent: rent,
+        monthlyRent: roomOptions.isEmpty
+            ? rent
+            : roomOptions
+                .map((o) => o.monthlyRent)
+                .reduce((a, b) => a < b ? a : b),
         currency: 'EGP',
         pricingUnit: PricingUnit.perBed,
-        totalBeds: 4,
-        occupiedBeds: 1,
-        availableBeds: 3,
+        totalBeds: roomOptions.isEmpty
+            ? 4
+            : roomOptions.fold(0, (sum, o) => sum + o.totalBeds),
+        occupiedBeds: roomOptions.isEmpty
+            ? 1
+            : roomOptions.fold(0, (sum, o) => sum + o.occupiedBeds),
+        availableBeds: roomOptions.isEmpty
+            ? 3
+            : roomOptions.fold(0, (sum, o) => sum + o.availableBeds),
+        roomOptions: roomOptions,
         status: status,
         updatedAt: '2026-10-21T00:00:00.123456Z');
 
@@ -124,24 +148,35 @@ class FakeListingRepository implements ListingRepository {
   }
 
   Listing _saved(ListingDraft draft,
-          {required String id, required String owner, Listing? original}) =>
-      Listing(
-        id: id,
-        landlordId: owner,
-        title: draft.title.trim(),
-        description: draft.description,
-        address: draft.address,
-        location: draft.location,
-        monthlyRent: double.parse(draft.monthlyRent),
-        currency: draft.currency,
-        pricingUnit: draft.pricingUnit,
-        totalBeds: int.parse(draft.totalBeds),
-        occupiedBeds: original?.occupiedBeds ?? 0,
-        availableBeds:
-            int.parse(draft.totalBeds) - (original?.occupiedBeds ?? 0),
-        status: original?.status ?? ListingStatus.draft,
-        updatedAt: '2026-10-22T00:00:00.123456Z',
-      );
+      {required String id, required String owner, Listing? original}) {
+    final payload = draft.toJson();
+    return Listing(
+      id: id,
+      landlordId: owner,
+      title: draft.title.trim(),
+      description: draft.description,
+      address: draft.address,
+      location: draft.location,
+      monthlyRent: payload['monthly_rent']! as double,
+      currency: draft.currency,
+      pricingUnit: draft.pricingUnit,
+      totalBeds: payload['total_bed_capacity']! as int,
+      occupiedBeds: original?.occupiedBeds ?? 0,
+      availableBeds: (payload['total_bed_capacity']! as int) -
+          (original?.occupiedBeds ?? 0),
+      roomOptions: [
+        for (final option in draft.roomOptions)
+          ListingRoomOption(
+            type: option.type,
+            roomCount: int.parse(option.roomCount),
+            monthlyRent: double.parse(option.monthlyRent),
+            occupiedBeds: original?.roomOption(option.type)?.occupiedBeds ?? 0,
+          ),
+      ],
+      status: original?.status ?? ListingStatus.draft,
+      updatedAt: '2026-10-22T00:00:00.123456Z',
+    );
+  }
 
   @override
   FutureEither<Listing> updateListing(
@@ -177,6 +212,7 @@ class FakeListingRepository implements ListingRepository {
         totalBeds: old.totalBeds,
         occupiedBeds: old.occupiedBeds,
         availableBeds: old.availableBeds,
+        roomOptions: old.roomOptions,
         status: status,
         updatedAt: '2026-10-23T00:00:00.000001Z');
     listings[listing.id] = listing;

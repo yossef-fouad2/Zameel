@@ -1,5 +1,6 @@
 import '../../utils/typedefs.dart';
 import '../models/booking.dart';
+import '../models/listing.dart';
 import '../models/user_role.dart';
 
 abstract class BookingRepository {
@@ -30,6 +31,7 @@ abstract class BookingRepository {
     required String listingId,
     required String requestId,
     String? message,
+    ListingRoomType? roomType,
   });
 
   FutureEither<Booking> act({

@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zameel/src/data/models/booking.dart';
 import 'package:zameel/src/data/models/booking_failure.dart';
+import 'package:zameel/src/data/models/listing.dart';
 import 'package:zameel/src/data/models/user_role.dart';
 import 'package:zameel/src/data/repositories/booking_repository_impl.dart';
 import 'package:zameel/src/services/booking_service.dart';
@@ -34,6 +35,12 @@ Map<String, Object?> _listingRow() => {
       'total_bed_capacity': 2,
       'occupied_beds': 0,
       'available_beds': 2,
+      'double_room_count': 0,
+      'double_room_monthly_rent': null,
+      'double_room_occupied_beds': 0,
+      'triple_room_count': 0,
+      'triple_room_monthly_rent': null,
+      'triple_room_occupied_beds': 0,
       'status': 'published',
       'updated_at': _time,
     };
@@ -50,6 +57,7 @@ Map<String, Object?> _row(
       'snapshot_monthly_rent': 1250.75,
       'snapshot_currency': 'EGP',
       'snapshot_pricing_unit': 'per_bed',
+      'room_type': null,
       'snapshot_occupied_beds': 0,
       'snapshot_total_beds': 2,
       'requested_at': _time,
@@ -82,6 +90,7 @@ void main() {
       'snapshot_monthly_rent': 1.001,
       'snapshot_currency': 'egp',
       'snapshot_pricing_unit': 'per_room',
+      'room_type': 'private',
       'snapshot_total_beds': 0,
       'snapshot_occupied_beds': 3,
       'requested_at': 'invalid',
@@ -114,6 +123,15 @@ void main() {
           throwsFormatException);
       expect(
           Booking.fromJson(_row(status: 'cancelled')).status.isActive, isFalse);
+    });
+    test('room type is retained without a visible listing or current offer',
+        () {
+      final booking = Booking.fromJson({..._row(), 'room_type': 'triple'});
+      expect(booking.listing, isNull);
+      expect(booking.roomType, ListingRoomType.tripleRoom);
+      expect(booking.monthlyRent, 1250.75);
+      expect(() => Booking.fromJson(_row()..remove('room_type')),
+          throwsFormatException);
     });
   });
 
@@ -375,7 +393,8 @@ void main() {
       expect(jsonDecode(requests.single.body), {
         'p_listing_id': _listing,
         'p_request_id': _request,
-        'p_message': 'A note'
+        'p_message': 'A note',
+        'p_room_type': null,
       });
       row = _row(status: 'cancelled');
       final replay = await repository.submit(
@@ -407,6 +426,46 @@ void main() {
             {'p_listing_id': _listing, 'p_booking_id': _booking});
       });
     }
+
+    test('typed submission sends only selection and never client-supplied rent',
+        () async {
+      row = {..._row(), 'room_type': 'double', 'snapshot_monthly_rent': 2000};
+      final result = await repository.submit(
+          userId: _student,
+          listingId: _listing,
+          requestId: _request,
+          message: 'A note',
+          roomType: ListingRoomType.doubleRoom);
+      final booking = result.getOrElse((failure) => throw failure);
+      expect(booking.roomType, ListingRoomType.doubleRoom);
+      expect(booking.monthlyRent, 2000);
+      expect(jsonDecode(requests.single.body), {
+        'p_listing_id': _listing,
+        'p_request_id': _request,
+        'p_message': 'A note',
+        'p_room_type': 'double',
+      });
+      row = {..._row(), 'room_type': 'triple'};
+      final mismatch = await repository.submit(
+          userId: _student,
+          listingId: _listing,
+          requestId: _request,
+          message: 'A note',
+          roomType: ListingRoomType.doubleRoom);
+      expect(mismatch.fold((failure) => failure, (_) => null),
+          isA<BookingWriteUncertainFailure>());
+    });
+
+    test('a transition cannot silently change the snapshotted room type',
+        () async {
+      row = {..._row(status: 'cancelled'), 'room_type': 'triple'};
+      final result = await repository.act(
+          userId: _student,
+          booking: Booking.fromJson({..._row(), 'room_type': 'double'}),
+          action: BookingAction.cancel);
+      expect(result.fold((failure) => failure, (_) => null),
+          isA<BookingWriteUncertainFailure>());
+    });
 
     test('transition ownership is checked before IO', () async {
       final booking = Booking.fromJson(_row(withListing: true));
@@ -473,6 +532,9 @@ void main() {
 
     for (final entry in <(String, String), String>{
       ('22023', 'listing_full'): 'full',
+      ('22023', 'room_type_required'): 'room_type_required',
+      ('22023', 'room_type_unavailable'): 'room_type_unavailable',
+      ('22023', 'room_type_full'): 'room_type_full',
       ('22023', 'listing_not_published'): 'unpublished',
       ('22023', 'pricing_unit_not_supported'): 'unsupported_unit',
       ('22023', 'active_booking_already_exists'): 'active_exists',

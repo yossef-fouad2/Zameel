@@ -45,6 +45,7 @@ class Booking extends Equatable {
     required this.monthlyRent,
     required this.currency,
     required this.pricingUnit,
+    this.roomType,
     required this.occupiedBeds,
     required this.totalBeds,
     required this.requestedAt,
@@ -61,6 +62,7 @@ class Booking extends Equatable {
   final double monthlyRent;
   final String currency;
   final PricingUnit pricingUnit;
+  final ListingRoomType? roomType;
   final int occupiedBeds, totalBeds;
 
   // Preserve PostgreSQL timestamp precision for stable history cursors.
@@ -70,13 +72,15 @@ class Booking extends Equatable {
   /// RLS can hide an archived/unpublished listing without hiding the request.
   final Listing? listing;
 
+  String? get acceptanceUnavailableReason => listing == null
+      ? 'bookings.errors.not_found'
+      : listing!.bookingUnavailableReason(roomType);
+
   bool allows(BookingAction action) => switch (action) {
         BookingAction.cancel => status.isActive,
         BookingAction.reject => status == BookingStatus.pending,
         BookingAction.accept => status == BookingStatus.pending &&
-            listing?.status == ListingStatus.published &&
-            listing?.pricingUnit == PricingUnit.perBed &&
-            (listing?.availableBeds ?? 0) > 0,
+            acceptanceUnavailableReason == null,
       };
 
   factory Booking.fromJson(Map<String, Object?> json) {
@@ -108,6 +112,7 @@ class Booking extends Equatable {
         currency is! String ||
         !RegExp(r'^[A-Z]{3}$').hasMatch(currency) ||
         json['snapshot_pricing_unit'] != 'per_bed' ||
+        !json.containsKey('room_type') ||
         total is! int ||
         total <= 0 ||
         total > Listing.maxBeds ||
@@ -149,6 +154,9 @@ class Booking extends Equatable {
       monthlyRent: rent.toDouble(),
       currency: currency,
       pricingUnit: PricingUnit.perBed,
+      roomType: json['room_type'] == null
+          ? null
+          : ListingRoomType.fromJson(json['room_type']),
       occupiedBeds: occupied,
       totalBeds: total,
       requestedAt: requested,
@@ -170,6 +178,7 @@ class Booking extends Equatable {
         monthlyRent,
         currency,
         pricingUnit,
+        roomType,
         occupiedBeds,
         totalBeds,
         requestedAt,

@@ -36,6 +36,42 @@ enum PricingUnit {
       };
 }
 
+enum ListingRoomType {
+  doubleRoom('double', 2),
+  tripleRoom('triple', 3);
+
+  const ListingRoomType(this.value, this.bedsPerRoom);
+  final String value;
+  final int bedsPerRoom;
+  String get translationKey => 'listings.room_types.$value';
+
+  static ListingRoomType fromJson(Object? value) => switch (value) {
+        'double' => doubleRoom,
+        'triple' => tripleRoom,
+        _ => throw const FormatException('Unsupported room type'),
+      };
+}
+
+/// A bed pool with one monthly per-bed price, not a whole-room booking.
+class ListingRoomOption extends Equatable {
+  const ListingRoomOption({
+    required this.type,
+    required this.roomCount,
+    required this.monthlyRent,
+    required this.occupiedBeds,
+  });
+
+  final ListingRoomType type;
+  final int roomCount;
+  final double monthlyRent;
+  final int occupiedBeds;
+  int get totalBeds => roomCount * type.bedsPerRoom;
+  int get availableBeds => totalBeds - occupiedBeds;
+
+  @override
+  List<Object?> get props => [type, roomCount, monthlyRent, occupiedBeds];
+}
+
 class Listing extends Equatable {
   const Listing({
     required this.id,
@@ -50,6 +86,7 @@ class Listing extends Equatable {
     required this.totalBeds,
     required this.occupiedBeds,
     required this.availableBeds,
+    this.roomOptions = const [],
     required this.status,
     required this.updatedAt,
   });
@@ -59,6 +96,8 @@ class Listing extends Equatable {
   static const selectFields =
       'id,landlord_id,title,description,address,latitude,longitude,monthly_rent,'
       'currency,pricing_unit,total_bed_capacity,occupied_beds,available_beds,'
+      'double_room_count,double_room_monthly_rent,double_room_occupied_beds,'
+      'triple_room_count,triple_room_monthly_rent,triple_room_occupied_beds,'
       'status,updated_at';
 
   final String id;
@@ -73,7 +112,33 @@ class Listing extends Equatable {
   final int totalBeds;
   final int occupiedBeds;
   final int availableBeds;
+  final List<ListingRoomOption> roomOptions;
   final ListingStatus status;
+
+  bool get hasRoomOptions => roomOptions.isNotEmpty;
+  ListingRoomOption? roomOption(ListingRoomType? type) {
+    for (final option in roomOptions) {
+      if (option.type == type) return option;
+    }
+    return null;
+  }
+
+  String? bookingUnavailableReason(ListingRoomType? roomType) {
+    if (pricingUnit != PricingUnit.perBed) {
+      return 'bookings.errors.unsupported_unit';
+    }
+    if (status != ListingStatus.published) return 'bookings.errors.unpublished';
+    if (availableBeds <= 0) return 'bookings.errors.full';
+    if (hasRoomOptions && roomType == null) {
+      return 'bookings.errors.room_type_required';
+    }
+    if (roomType != null) {
+      final option = roomOption(roomType);
+      if (option == null) return 'bookings.errors.room_type_unavailable';
+      if (option.availableBeds <= 0) return 'bookings.errors.room_type_full';
+    }
+    return null;
+  }
 
   /// Keep the server's exact timestamp spelling and precision for CAS updates.
   final String updatedAt;
@@ -126,6 +191,49 @@ class Listing extends Equatable {
         DateTime.tryParse(updatedAt) == null) {
       throw const FormatException('Invalid listing');
     }
+    final pricingUnit = PricingUnit.fromJson(json['pricing_unit']);
+    final roomOptions = <ListingRoomOption>[];
+    for (final type in ListingRoomType.values) {
+      final count = json['${type.value}_room_count'];
+      final price = json['${type.value}_room_monthly_rent'];
+      final occupied = json['${type.value}_room_occupied_beds'];
+      if (count is! int ||
+          count < 0 ||
+          count > maxBeds ~/ type.bedsPerRoom ||
+          !json.containsKey('${type.value}_room_monthly_rent') ||
+          (count == 0
+              ? price != null
+              : price is! num ||
+                  !price.isFinite ||
+                  price < 0 ||
+                  price > maxMonthlyRent ||
+                  price.toDouble() != double.parse(price.toStringAsFixed(2))) ||
+          occupied is! int ||
+          occupied < 0 ||
+          occupied > count * type.bedsPerRoom) {
+        throw const FormatException('Invalid listing room option');
+      }
+      if (count > 0) {
+        roomOptions.add(ListingRoomOption(
+          type: type,
+          roomCount: count,
+          monthlyRent: (price as num).toDouble(),
+          occupiedBeds: occupied,
+        ));
+      }
+    }
+    if (roomOptions.isNotEmpty &&
+        (pricingUnit != PricingUnit.perBed ||
+            totalBeds !=
+                roomOptions.fold<int>(0, (sum, o) => sum + o.totalBeds) ||
+            occupiedBeds !=
+                roomOptions.fold<int>(0, (sum, o) => sum + o.occupiedBeds) ||
+            rent !=
+                roomOptions
+                    .map((o) => o.monthlyRent)
+                    .reduce((a, b) => a < b ? a : b))) {
+      throw const FormatException('Inconsistent listing room totals');
+    }
     final hasLocation = json['latitude'] != null || json['longitude'] != null;
     return Listing(
       id: id,
@@ -136,10 +244,11 @@ class Listing extends Equatable {
       location: hasLocation ? GeoPoint.fromJson(json) : null,
       monthlyRent: rent.toDouble(),
       currency: currency,
-      pricingUnit: PricingUnit.fromJson(json['pricing_unit']),
+      pricingUnit: pricingUnit,
       totalBeds: totalBeds,
       occupiedBeds: occupiedBeds,
       availableBeds: availableBeds,
+      roomOptions: List.unmodifiable(roomOptions),
       status: ListingStatus.fromJson(json['status']),
       updatedAt: updatedAt,
     );
@@ -159,6 +268,7 @@ class Listing extends Equatable {
         totalBeds,
         occupiedBeds,
         availableBeds,
+        roomOptions,
         status,
         updatedAt,
       ];

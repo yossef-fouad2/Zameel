@@ -59,6 +59,14 @@ class BookingQuote extends StatelessWidget {
           Text('bookings.one_bed_monthly'.tr(),
               style: context.textTheme.bodySmall
                   ?.copyWith(color: context.colors.onSurfaceVariant)),
+          if (booking.roomType != null) ...[
+            const SizedBox(height: 8),
+            Text(
+                'bookings.room_type'.tr(namedArgs: {
+                  'type': booking.roomType!.translationKey.tr(),
+                }),
+                style: context.textTheme.titleSmall),
+          ],
         ],
       );
 }

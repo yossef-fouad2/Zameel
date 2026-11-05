@@ -33,6 +33,12 @@ Map<String, Object?> _listingRow() => {
       'total_bed_capacity': 3,
       'occupied_beds': 1,
       'available_beds': 2,
+      'double_room_count': 0,
+      'double_room_monthly_rent': null,
+      'double_room_occupied_beds': 0,
+      'triple_room_count': 0,
+      'triple_room_monthly_rent': null,
+      'triple_room_occupied_beds': 0,
       'status': 'draft',
       'created_at': '2026-10-01T00:00:00Z',
       'updated_at': _timestamp,
@@ -211,6 +217,182 @@ void main() {
   });
 
   group('ListingDraft', () {
+    test('optional room types derive capacity and cheapest per-bed rent', () {
+      const draft = ListingDraft(title: 'Mixed rooms', roomOptions: [
+        ListingRoomDraft(
+            type: ListingRoomType.doubleRoom,
+            roomCount: '2',
+            monthlyRent: '2000.50'),
+        ListingRoomDraft(
+            type: ListingRoomType.tripleRoom,
+            roomCount: '1',
+            monthlyRent: '1250'),
+      ]);
+      expect(draft.validate(), isEmpty);
+      expect(draft.roomBedCapacity, 7);
+      final json = draft.toJson();
+      expect(json['monthly_rent'], 1250);
+      expect(json['total_bed_capacity'], 7);
+      expect(json['double_room_count'], 2);
+      expect(json['double_room_monthly_rent'], 2000.50);
+      expect(json['triple_room_count'], 1);
+      expect(json['triple_room_monthly_rent'], 1250);
+      expect(json.keys.where((key) => key.contains('occupied')), isEmpty);
+      final listing = Listing.fromJson({
+        ..._listingRow(),
+        ...json,
+        'occupied_beds': 2,
+        'double_room_occupied_beds': 1,
+        'triple_room_occupied_beds': 1,
+        'available_beds': 5,
+      });
+      expect(listing.roomOption(ListingRoomType.doubleRoom)?.availableBeds, 3);
+      expect(listing.roomOption(ListingRoomType.tripleRoom)?.availableBeds, 2);
+      expect(ListingDraft.fromListing(listing).toJson(), json);
+      expect(() => listing.roomOptions.clear(), throwsUnsupportedError);
+      expect(() => ListingDraft.fromListing(listing).roomOptions.clear(),
+          throwsUnsupportedError);
+    });
+
+    test('disabled types remain absent and zero-priced beds remain enabled',
+        () {
+      const draft = ListingDraft(title: 'A room', roomOptions: [
+        ListingRoomDraft(
+            type: ListingRoomType.tripleRoom, roomCount: '1', monthlyRent: '0'),
+      ]);
+      expect(draft.validate(), isEmpty);
+      final json = draft.toJson();
+      expect(json['double_room_count'], 0);
+      expect(json['double_room_monthly_rent'], isNull);
+      expect(json['triple_room_monthly_rent'], 0);
+      final listing = Listing.fromJson({
+        ..._listingRow(),
+        ...json,
+        'occupied_beds': 0,
+        'available_beds': 3,
+      });
+      expect(listing.roomOptions.single.type, ListingRoomType.tripleRoom);
+      expect(listing.monthlyRent, 0);
+      expect(Listing.fromJson(_listingRow()).roomOptions, isEmpty);
+    });
+
+    test(
+        'room validation rejects invalid counts, prices, duplicate types and units',
+        () {
+      for (final count in [
+        '',
+        '0',
+        '-1',
+        '1.5',
+        '1e3',
+        '1073741824',
+        '9223372036854775807'
+      ]) {
+        final draft = _validDraft.copyWith(roomOptions: [
+          ListingRoomDraft(
+              type: ListingRoomType.doubleRoom,
+              roomCount: count,
+              monthlyRent: '1200'),
+        ]);
+        expect(draft.validate(), contains('doubleRoomCount'), reason: count);
+      }
+      for (final rent in ['', '-1', 'NaN', '1.001', '10000000000']) {
+        final draft = _validDraft.copyWith(roomOptions: [
+          ListingRoomDraft(
+              type: ListingRoomType.tripleRoom,
+              roomCount: '1',
+              monthlyRent: rent),
+        ]);
+        expect(draft.validate(), contains('tripleMonthlyRent'), reason: rent);
+      }
+      const option = ListingRoomDraft(
+          type: ListingRoomType.doubleRoom, roomCount: '1', monthlyRent: '1');
+      expect(_validDraft.copyWith(roomOptions: [option, option]).validate(),
+          contains('roomOptions'));
+      expect(
+          _validDraft.copyWith(
+              roomOptions: [option],
+              pricingUnit: PricingUnit.perRoom).validate(),
+          contains('roomOptions'));
+      expect(
+          _validDraft.copyWith(roomOptions: const [
+            ListingRoomDraft(
+                type: ListingRoomType.doubleRoom,
+                roomCount: '1073741823',
+                monthlyRent: '1'),
+            ListingRoomDraft(
+                type: ListingRoomType.tripleRoom,
+                roomCount: '1',
+                monthlyRent: '1'),
+          ]).validate(),
+          contains('roomOptions'));
+    });
+
+    test('occupied capacity is protected per type, not just at listing level',
+        () {
+      const original = [
+        ListingRoomOption(
+            type: ListingRoomType.doubleRoom,
+            roomCount: 2,
+            monthlyRent: 2000,
+            occupiedBeds: 3),
+      ];
+      final draft = _validDraft.copyWith(roomOptions: const [
+        ListingRoomDraft(
+            type: ListingRoomType.doubleRoom,
+            roomCount: '1',
+            monthlyRent: '2000'),
+        ListingRoomDraft(
+            type: ListingRoomType.tripleRoom,
+            roomCount: '1',
+            monthlyRent: '1250'),
+      ]);
+      expect(
+          draft.validate(
+              occupiedBeds: 3,
+              originalRoomOptions: original)['doubleRoomCount'],
+          'listings.validation.occupied_beds');
+      expect(_validDraft.validate(originalRoomOptions: original)['roomOptions'],
+          'listings.errors.room_options_locked');
+    });
+
+    test('server room data must have consistent counters, prices and totals',
+        () {
+      final row = {
+        ..._listingRow(),
+        'double_room_count': 1,
+        'double_room_monthly_rent': 1250.50,
+        'double_room_occupied_beds': 1,
+        'total_bed_capacity': 2,
+        'available_beds': 1,
+      };
+      expect(Listing.fromJson(row).roomOptions, hasLength(1));
+      for (final change in <Map<String, Object?>>[
+        {'double_room_count': -1},
+        {'double_room_count': 0},
+        {'double_room_count': 1.0},
+        {'double_room_count': 1073741824},
+        {'double_room_monthly_rent': null},
+        {'double_room_monthly_rent': -1},
+        {'double_room_monthly_rent': 1.001},
+        {'double_room_monthly_rent': '1250.50'},
+        {'double_room_occupied_beds': -1},
+        {'double_room_occupied_beds': 3},
+        {'triple_room_occupied_beds': 1},
+        {'triple_room_monthly_rent': 0},
+        {'monthly_rent': 500},
+        {'pricing_unit': 'per_room'},
+        {'total_bed_capacity': 3, 'available_beds': 2},
+        {'occupied_beds': 0, 'available_beds': 2},
+      ]) {
+        expect(
+            () => Listing.fromJson({...row, ...change}), throwsFormatException,
+            reason: '$change');
+      }
+      expect(() => Listing.fromJson({...row}..remove('triple_room_count')),
+          throwsFormatException);
+    });
+
     test('starts empty, and reconstructs editable text without server fields',
         () {
       const empty = ListingDraft();
@@ -240,6 +422,10 @@ void main() {
         'currency': 'EGP',
         'pricing_unit': 'per_bed',
         'total_bed_capacity': 3,
+        'double_room_count': 0,
+        'double_room_monthly_rent': null,
+        'triple_room_count': 0,
+        'triple_room_monthly_rent': null,
       });
       expect(_validDraft.copyWith(clearLocation: true).toJson()['latitude'],
           isNull);

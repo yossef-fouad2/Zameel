@@ -14,6 +14,7 @@ class BookingRequestState extends Equatable {
     this.listing,
     this.booking,
     this.message = '',
+    this.roomType,
     this.isLoading = true,
     this.isSubmitting = false,
     this.hasLoaded = false,
@@ -25,9 +26,13 @@ class BookingRequestState extends Equatable {
   final Listing? listing;
   final Booking? booking;
   final String message;
+  final ListingRoomType? roomType;
+  ListingRoomOption? get selectedRoomOption => listing?.roomOption(roomType);
   final bool isLoading, isSubmitting, hasLoaded, isUncertain, wasSubmitted;
   final String? errorMessage;
-  bool get isDirty => booking == null && (message.isNotEmpty || isUncertain);
+  bool get isDirty =>
+      booking == null &&
+      (message.isNotEmpty || roomType != null || isUncertain);
   bool get canEdit =>
       hasLoaded &&
       !isLoading &&
@@ -36,18 +41,14 @@ class BookingRequestState extends Equatable {
       booking == null;
   String? get unavailableReason => listing == null
       ? 'bookings.errors.not_found'
-      : listing!.pricingUnit != PricingUnit.perBed
-          ? 'bookings.errors.unsupported_unit'
-          : listing!.status != ListingStatus.published
-              ? 'bookings.errors.unpublished'
-              : listing!.availableBeds <= 0
-                  ? 'bookings.errors.full'
-                  : null;
+      : listing!.bookingUnavailableReason(roomType);
   bool get canSubmit => canEdit && unavailableReason == null;
   bool get canRetry => isUncertain && !isLoading && !isSubmitting;
 
   BookingRequestState copyWith({
     String? message,
+    ListingRoomType? roomType,
+    bool clearRoomType = false,
     bool? isSubmitting,
     bool? isUncertain,
     bool? wasSubmitted,
@@ -59,6 +60,7 @@ class BookingRequestState extends Equatable {
         listing: listing,
         booking: booking ?? this.booking,
         message: message ?? this.message,
+        roomType: clearRoomType ? null : roomType ?? this.roomType,
         isLoading: isLoading,
         isSubmitting: isSubmitting ?? this.isSubmitting,
         hasLoaded: hasLoaded ?? this.hasLoaded,
@@ -72,6 +74,7 @@ class BookingRequestState extends Equatable {
         listing,
         booking,
         message,
+        roomType,
         isLoading,
         isSubmitting,
         hasLoaded,
@@ -100,6 +103,7 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
   final String _userId, _listingId;
   final String Function() _requestIdFactory;
   String? _requestId, _sentMessage;
+  ListingRoomType? _sentRoomType;
   int _generation = 0;
 
   static String _newRequestId() {
@@ -118,7 +122,9 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
     final generation = ++_generation;
     final old = state;
     emit(BookingRequestState(
-        message: old.message, isUncertain: old.isUncertain));
+        message: old.message,
+        roomType: old.roomType,
+        isUncertain: old.isUncertain));
     final listingFuture =
         _listings.getPublishedListing(userId: _userId, listingId: _listingId);
     final bookingResult = await _bookings.findStudentBooking(
@@ -133,11 +139,13 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
     if (booking != null) {
       _requestId = null;
       _sentMessage = null;
+      _sentRoomType = null;
     }
     emit(BookingRequestState(
       listing: listing,
       booking: booking,
       message: old.message,
+      roomType: old.roomType,
       isLoading: false,
       hasLoaded: bookingResult.isRight() && listingResult.isRight(),
       // An empty read can finish before an in-flight write. It is not proof of
@@ -156,6 +164,15 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
     emit(state.copyWith(message: message));
   }
 
+  void changeRoomType(ListingRoomType? type) {
+    if (!state.canEdit || isClosed) return;
+    if (type != null &&
+        (state.listing?.roomOption(type)?.availableBeds ?? 0) <= 0) {
+      return;
+    }
+    emit(state.copyWith(roomType: type, clearRoomType: type == null));
+  }
+
   Future<void> submit() async {
     if (isClosed || (!state.canSubmit && !state.canRetry)) return;
     if (!state.isUncertain) {
@@ -166,6 +183,7 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
       }
       _requestId = _requestIdFactory();
       _sentMessage = message.isEmpty ? null : message;
+      _sentRoomType = state.roomType;
     }
     final requestId = _requestId;
     if (requestId == null) return;
@@ -175,13 +193,15 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
         userId: _userId,
         listingId: _listingId,
         requestId: requestId,
-        message: _sentMessage);
+        message: _sentMessage,
+        roomType: _sentRoomType);
     if (isClosed || generation != _generation) return;
     result.fold((failure) {
       final uncertain = failure is BookingWriteUncertainFailure;
       if (!uncertain) {
         _requestId = null;
         _sentMessage = null;
+        _sentRoomType = null;
       }
       emit(state.copyWith(
           isSubmitting: false,
@@ -191,6 +211,7 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
     }, (booking) {
       _requestId = null;
       _sentMessage = null;
+      _sentRoomType = null;
       emit(state.copyWith(
           booking: booking,
           isSubmitting: false,
@@ -205,6 +226,7 @@ class BookingRequestCubit extends Cubit<BookingRequestState> {
     _generation++;
     _requestId = null;
     _sentMessage = null;
+    _sentRoomType = null;
     emit(const BookingRequestState(isLoading: false));
   }
 }

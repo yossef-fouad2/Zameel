@@ -1,6 +1,7 @@
 import '../../services/booking_service.dart';
 import '../../utils/typedefs.dart';
 import '../models/booking.dart';
+import '../models/listing.dart';
 import '../models/user_role.dart';
 import 'booking_repository.dart';
 
@@ -47,12 +48,14 @@ class BookingRepositoryImpl implements BookingRepository {
     required String listingId,
     required String requestId,
     String? message,
+    ListingRoomType? roomType,
   }) =>
       _service.submit(
           userId: userId,
           listingId: listingId,
           requestId: requestId,
-          message: message);
+          message: message,
+          roomType: roomType);
 
   @override
   FutureEither<Booking> act({

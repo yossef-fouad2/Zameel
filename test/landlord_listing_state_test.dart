@@ -49,6 +49,72 @@ void main() {
         containsAll(['title', 'monthlyRent', 'totalBeds']));
   });
 
+  test('room choices are local, validate, save and restore on discard',
+      () async {
+    await editor.load();
+    editor.change(title: 'Mixed rooms', pricingUnit: PricingUnit.perRoom);
+    editor.change(roomType: ListingRoomType.doubleRoom, roomEnabled: true);
+    expect(editor.state.draft.pricingUnit, PricingUnit.perBed);
+    await editor.save();
+    expect(repository.creates, 0);
+    expect(editor.state.validationErrors, contains('doubleRoomCount'));
+    expect(editor.state.validationErrors, contains('doubleMonthlyRent'));
+    editor.change(
+        roomType: ListingRoomType.doubleRoom,
+        roomCount: '2',
+        roomMonthlyRent: '2000');
+    editor.change(
+        roomType: ListingRoomType.tripleRoom,
+        roomEnabled: true,
+        roomCount: '1',
+        roomMonthlyRent: '1250');
+    expect(repository.creates + repository.updates, 0);
+    expect(editor.state.draft.roomBedCapacity, 7);
+    await editor.save();
+    expect(repository.creates, 1);
+    expect(editor.state.original!.roomOptions, hasLength(2));
+    expect(editor.state.original!.totalBeds, 7);
+    expect(editor.state.original!.monthlyRent, 1250);
+    expect(editor.state.isDirty, isFalse);
+    editor.change(
+        roomType: ListingRoomType.tripleRoom, roomMonthlyRent: '1400');
+    expect(editor.state.isDirty, isTrue);
+    editor.discard();
+    expect(
+        editor.state.draft.roomOption(ListingRoomType.tripleRoom)!.monthlyRent,
+        '1250.00');
+    expect(editor.state.isDirty, isFalse);
+    editor.change(roomType: ListingRoomType.doubleRoom, roomEnabled: false);
+    editor.change(roomType: ListingRoomType.tripleRoom, roomEnabled: false);
+    await editor.save();
+    expect(editor.state.original!.roomOptions, isEmpty);
+    expect(editor.state.original!.totalBeds, 7);
+    expect(repository.updates, 1);
+  });
+
+  test('typed prices hydrate on edit and do not trigger routing', () async {
+    await editor.close();
+    repository.listings['listing-1'] =
+        testListing(roomOptions: testRoomOptions);
+    editor = ListingEditorCubit(
+        repository: repository,
+        universities: universities,
+        userId: 'landlord-1',
+        listingId: 'listing-1');
+    await editor.load();
+    expect(editor.state.draft.roomOptions, hasLength(2));
+    editor.change(
+        roomType: ListingRoomType.doubleRoom, roomMonthlyRent: '2200.75');
+    await editor.save();
+    expect(
+        editor.state.original!
+            .roomOption(ListingRoomType.doubleRoom)!
+            .monthlyRent,
+        2200.75);
+    expect(repository.updates, 1);
+    expect(repository.refreshes, 0);
+  });
+
   test('save commits once then routing failure preserves the saved property',
       () async {
     repository.routeFailure =

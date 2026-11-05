@@ -111,27 +111,73 @@ class ListingStatusChip extends StatelessWidget {
 }
 
 class ListingPrice extends StatelessWidget {
-  const ListingPrice({super.key, required this.listing});
+  const ListingPrice({super.key, required this.listing, this.roomOption});
   final Listing listing;
+  final ListingRoomOption? roomOption;
+  @override
+  Widget build(BuildContext context) {
+    final rent = roomOption?.monthlyRent ?? listing.monthlyRent;
+    final price = NumberFormat.currency(
+            locale: context.locale.languageCode,
+            name: listing.currency,
+            symbol: listing.currency,
+            decimalDigits: rent % 1 == 0 ? 0 : 2)
+        .format(rent);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+            roomOption == null && listing.hasRoomOptions
+                ? 'listings.room_options.from_price'
+                    .tr(namedArgs: {'price': price})
+                : price,
+            style: context.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w800)),
+        Text(
+            roomOption == null
+                ? 'listings.price_caption'.tr(namedArgs: {
+                    'unit': listing.pricingUnit.translationKey.tr(),
+                  })
+                : 'listings.room_options.price_caption'.tr(namedArgs: {
+                    'type': roomOption!.type.translationKey.tr(),
+                  }),
+            style: context.textTheme.bodySmall
+                ?.copyWith(color: context.colors.onSurfaceVariant)),
+      ],
+    );
+  }
+}
+
+class ListingRoomDetails extends StatelessWidget {
+  const ListingRoomDetails(
+      {super.key, required this.listing, required this.option});
+  final Listing listing;
+  final ListingRoomOption option;
+
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(option.type.translationKey.tr(),
+              style: context.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ListingPrice(listing: listing, roomOption: option),
+          const SizedBox(height: 8),
           Text(
-              NumberFormat.currency(
-                      locale: context.locale.languageCode,
-                      name: listing.currency,
-                      symbol: listing.currency,
-                      decimalDigits: listing.monthlyRent % 1 == 0 ? 0 : 2)
-                  .format(listing.monthlyRent),
-              style: context.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800)),
-          Text(
-              'listings.price_caption'.tr(namedArgs: {
-                'unit': listing.pricingUnit.translationKey.tr(),
+              'listings.room_options.beds_per_room'.tr(namedArgs: {
+                'count': '${option.type.bedsPerRoom}',
               }),
-              style: context.textTheme.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant)),
+              style: context.textTheme.bodySmall),
+          const SizedBox(height: 6),
+          Text(
+              'listings.beds_available'.tr(namedArgs: {
+                'available': '${option.availableBeds}',
+                'total': '${option.totalBeds}',
+              }),
+              style: context.textTheme.bodySmall?.copyWith(
+                  color: option.availableBeds > 0
+                      ? context.colors.onSurfaceVariant
+                      : context.colors.error)),
         ],
       );
 }
@@ -189,6 +235,10 @@ class PropertyListingCard extends StatelessWidget {
           ListingPrice(listing: listing),
           const SizedBox(height: 14),
           Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final option in listing.roomOptions)
+              KinshipPill(
+                  label: option.type.translationKey.tr(),
+                  icon: Icons.meeting_room_outlined),
             if (showStatus) ListingStatusChip(status: listing.status),
             KinshipPill(
                 label: 'listings.beds_available'.tr(namedArgs: {

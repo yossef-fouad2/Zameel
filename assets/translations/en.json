@@ -24,6 +24,19 @@
     "beds_available": "{available} of {total} beds available",
     "walk_distance": "~{distance} km walking",
     "pricing": {"per_bed": "Per bed", "per_room": "Per room", "per_property": "Per property"},
+    "room_types": {"double": "Double room", "triple": "Triple room"},
+    "room_options": {
+      "editor_title": "Prices by room type (optional)",
+      "editor_notice": "Enable the room types in this property. All beds in a type share one monthly price. Leave both off to use a single price for the listing.",
+      "beds_per_room": "{count} beds per room",
+      "room_count": "Number of rooms of this type",
+      "monthly_rent": "Monthly rent per bed",
+      "capacity_notice": "Total bed capacity is calculated from the rooms you add.",
+      "total_capacity": "Total capacity from your rooms: {total} beds",
+      "from_price": "From {price}",
+      "price_caption": "Per bed in a {type}, per month",
+      "student_notice": "Compare prices per bed below. Choose an available room type when you request a bed."
+    },
     "status": {"draft": "Draft", "published": "Published", "archived": "Archived"},
     "landlord": {
       "eyebrow": "YOUR PLACES, THOUGHTFULLY CONNECTED",
@@ -97,6 +110,8 @@
       "currency": "Use an uppercase three-letter currency code, such as EGP.",
       "total_beds": "Enter a positive whole number of beds within the supported range.",
       "occupied_beds": "Capacity cannot be lower than the number of occupied beds.",
+      "room_count": "Enter a positive whole number of rooms within the supported range.",
+      "room_options": "Use per-bed pricing and configure each room type only once.",
       "location": "Choose a valid location on the map.",
       "location_required": "Choose and save an exact map pin before publishing or calculating routes."
     },
@@ -108,7 +123,7 @@
       "forbidden": "Your account is not allowed to perform this action.",
       "conflict": "This property changed elsewhere. Your edits are still here; reload the latest version before saving again.",
       "save_uncertain": "We could not confirm whether the save reached the server. Your edits are still here. Check your properties or reload before another save to avoid duplicates or overwriting newer changes.",
-      "setup_required": "Listing locations are not configured yet. Apply supabase/007_university_discovery.sql and configure the routing function, then retry.",
+      "setup_required": "The listing service is not fully configured. Apply the database upgrades in SETUP.md, including 010_room_type_pricing.sql, and configure routing, then retry.",
       "invalid_response": "We could not safely read the property data. Reload before making changes.",
       "save_failed": "The property could not be saved. Your edits have been kept.",
       "request_failed": "We could not reach the property service. Check your connection and retry.",
@@ -116,7 +131,8 @@
       "routes_changed": "A map pin changed while routes were calculated. Save the latest pin, then refresh its walking connections.",
       "routes_rate_limited": "The routing service has reached its usage limit. Your property is saved; try the route calculation later.",
       "selection_failed": "We could not remember your university on this device. You can still browse and choose again next time.",
-      "pricing_unit_locked": "This pricing unit cannot change while the property has active booking requests."
+      "pricing_unit_locked": "This pricing unit cannot change while the property has active booking requests.",
+      "room_options_locked": "Room types cannot be removed while they have pending or accepted requests. Existing requests without a room type must be resolved before enabling room types."
     },
     "discovery": {
       "eyebrow": "YOUR CAMPUS. YOUR NEXT CHAPTER.",
@@ -164,6 +180,7 @@
     "open_request": "View request",
     "quote": "Rent quoted at submission",
     "one_bed_monthly": "For one bed, per month",
+    "room_type": "Selected room type: {type}",
     "pending_notice": "A pending request is not a reservation. A bed is held only after the landlord accepts it.",
     "property_unavailable": "Property no longer public",
     "property_unavailable_body": "The property is no longer public or its latest details could not be loaded. Your request and original quote are kept.",
@@ -195,6 +212,9 @@
       "recorded": "Your request is recorded.",
       "existing": "You already have a request here.",
       "price_notice": "This is the current advertised rent. The server records the latest rent and currency when you send your request; that quote is kept in your request history.",
+      "room_title": "Choose your room type",
+      "room_notice": "Select one available type before sending. The price is for one bed, not the whole room. Full types cannot be selected.",
+      "clear_room": "Clear the unavailable room selection",
       "message_title": "A note for the landlord",
       "message_notice": "Optional. Only the property owner can review this message with your request. Avoid sensitive personal information.",
       "message_label": "Your message (optional)",
@@ -204,7 +224,7 @@
       "unavailable": "This place cannot take a new request",
       "no_payment": "No payment is taken here. Sending a request does not confirm accommodation.",
       "leave_title": "Leave this request screen?",
-      "leave_draft": "Your message has not been sent. Leaving discards this draft, or you can stay and finish it.",
+      "leave_draft": "Your request has not been sent. Leaving discards your message and room choice, or you can stay and finish it.",
       "leave_uncertain": "Your request may already have reached the server. Leaving does not cancel it. Check the Requests tab before starting another request."
     },
     "detail": {
@@ -217,6 +237,7 @@
       "no_message": "No message was added to this request.",
       "property": "Current property details",
       "refreshing_property": "Checking the property's latest availability...",
+      "room_availability": "{type}: {available} beds currently available",
       "manage_property": "Manage property",
       "view_property": "View property",
       "review": "Review this request",
@@ -257,6 +278,9 @@
       "not_found": "This request or property is unavailable, or your account cannot access it.",
       "forbidden": "Your account is not allowed to perform this booking action.",
       "full": "No bed is currently available. Pending requests do not reserve capacity.",
+      "room_type_required": "Choose an available room type before sending your request.",
+      "room_type_unavailable": "This room type is no longer offered. Choose another available type or clear your selection if the property now uses a single price.",
+      "room_type_full": "No bed is currently available in the selected room type. Other room types may still have space.",
       "unpublished": "This property must be published before a request can be sent or accepted. Existing requests can still be declined or cancelled.",
       "unsupported_unit": "Booking requests currently support per-bed listings only. Per-room and whole-property prices cannot be booked as one bed.",
       "active_exists": "You already have a pending or accepted request for this property. Check the latest status to view it.",

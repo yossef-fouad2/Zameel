@@ -55,6 +55,16 @@ class PropertyDetailsView extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           ListingPrice(listing: listing),
+                          if (listing.hasRoomOptions) ...[
+                            const SizedBox(height: 16),
+                            Text('listings.room_options.student_notice'.tr(),
+                                style: context.textTheme.bodySmall),
+                            for (final option in listing.roomOptions) ...[
+                              const Divider(height: 28),
+                              ListingRoomDetails(
+                                  listing: listing, option: option),
+                            ],
+                          ],
                           const SizedBox(height: 14),
                           Wrap(spacing: 8, runSpacing: 8, children: [
                             KinshipPill(

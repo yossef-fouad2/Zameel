@@ -44,6 +44,22 @@ class CodegenLoader extends AssetLoader{
       "per_room": "لكل غرفة",
       "per_property": "للعقار بالكامل"
     },
+    "room_types": {
+      "double": "غرفة ثنائية",
+      "triple": "غرفة ثلاثية"
+    },
+    "room_options": {
+      "editor_title": "الأسعار حسب نوع الغرفة (اختياري)",
+      "editor_notice": "فعّل أنواع الغرف الموجودة في العقار. لكل سرير من النوع نفسه سعر شهري موحد. اترك الخيارين مغلقين لاستخدام سعر واحد للإعلان.",
+      "beds_per_room": "{count} أسرّة في كل غرفة",
+      "room_count": "عدد الغرف من هذا النوع",
+      "monthly_rent": "الإيجار الشهري لكل سرير",
+      "capacity_notice": "يُحسب إجمالي عدد الأسرّة من الغرف التي تضيفها.",
+      "total_capacity": "إجمالي السعة من الغرف: {total} سرير",
+      "from_price": "يبدأ من {price}",
+      "price_caption": "لكل سرير في {type}، شهرياً",
+      "student_notice": "قارن أسعار الأسرّة أدناه، ثم اختر نوع غرفة متاحاً عند إرسال طلب سرير."
+    },
     "status": {
       "draft": "مسودة",
       "published": "منشور",
@@ -121,6 +137,8 @@ class CodegenLoader extends AssetLoader{
       "currency": "استخدم رمز عملة من ثلاثة أحرف إنجليزية كبيرة، مثل EGP.",
       "total_beds": "أدخل عدداً صحيحاً موجباً للأسرّة ضمن النطاق المدعوم.",
       "occupied_beds": "لا يمكن أن تقل السعة عن عدد الأسرّة المشغولة.",
+      "room_count": "أدخل عدداً صحيحاً موجباً للغرف ضمن النطاق المدعوم.",
+      "room_options": "استخدم التسعير لكل سرير وأضف كل نوع غرفة مرة واحدة فقط.",
       "location": "اختر موقعاً صالحاً على الخريطة.",
       "location_required": "اختر واحفظ علامة دقيقة للموقع قبل النشر أو حساب المسارات."
     },
@@ -132,7 +150,7 @@ class CodegenLoader extends AssetLoader{
       "forbidden": "حسابك غير مسموح له بتنفيذ هذا الإجراء.",
       "conflict": "تم تعديل العقار من مكان آخر. بقيت تعديلاتك هنا؛ حمّل أحدث نسخة قبل الحفظ مجدداً.",
       "save_uncertain": "تعذر التأكد من وصول الحفظ إلى الخادم. بقيت تعديلاتك هنا. راجع عقاراتك أو أعد التحميل قبل الحفظ مجدداً لتجنب التكرار أو استبدال تغييرات أحدث.",
-      "setup_required": "مواقع العقارات غير معدة بعد. طبّق supabase/007_university_discovery.sql واضبط وظيفة المسارات، ثم أعد المحاولة.",
+      "setup_required": "خدمة العقارات غير معدة بالكامل. طبّق ترقيات قاعدة البيانات في SETUP.md، بما فيها 010_room_type_pricing.sql، واضبط المسارات ثم أعد المحاولة.",
       "invalid_response": "تعذر قراءة بيانات العقار بأمان. أعد التحميل قبل إجراء تغييرات.",
       "save_failed": "تعذر حفظ العقار. احتفظنا بتعديلاتك.",
       "request_failed": "تعذر الاتصال بخدمة العقارات. تحقق من اتصالك وأعد المحاولة.",
@@ -140,7 +158,8 @@ class CodegenLoader extends AssetLoader{
       "routes_changed": "تغير موقع أثناء حساب المسارات. احفظ أحدث علامة ثم حدّث مسارات المشي.",
       "routes_rate_limited": "وصلت خدمة المسارات إلى حد الاستخدام. عقارك محفوظ؛ حاول حساب المسارات لاحقاً.",
       "selection_failed": "تعذر تذكر جامعتك على هذا الجهاز. يمكنك متابعة التصفح واختيارها مرة أخرى لاحقاً.",
-      "pricing_unit_locked": "لا يمكن تغيير وحدة التسعير مع وجود طلبات حجز نشطة لهذا العقار."
+      "pricing_unit_locked": "لا يمكن تغيير وحدة التسعير مع وجود طلبات حجز نشطة لهذا العقار.",
+      "room_options_locked": "لا يمكن إزالة نوع غرفة له طلبات معلقة أو مقبولة. يجب إنهاء الطلبات القديمة التي لا تحدد نوع غرفة قبل تفعيل أنواع الغرف."
     },
     "discovery": {
       "eyebrow": "جامعتك. فصلك القادم.",
@@ -188,6 +207,7 @@ class CodegenLoader extends AssetLoader{
     "open_request": "عرض الطلب",
     "quote": "الإيجار المسجل عند إرسال الطلب",
     "one_bed_monthly": "لسرير واحد، شهرياً",
+    "room_type": "نوع الغرفة المختار: {type}",
     "pending_notice": "الطلب المعلق ليس حجزاً مؤكداً. يُحجز السرير فقط بعد قبول المالك للطلب.",
     "property_unavailable": "العقار لم يعد متاحاً للعامة",
     "property_unavailable_body": "العقار لم يعد متاحاً للعامة أو تعذر تحميل أحدث تفاصيله. يبقى طلبك والسعر الأصلي محفوظين.",
@@ -228,6 +248,9 @@ class CodegenLoader extends AssetLoader{
       "recorded": "تم تسجيل طلبك.",
       "existing": "لديك طلب لهذا المكان بالفعل.",
       "price_notice": "هذا هو الإيجار المعلن حالياً. يسجل الخادم أحدث إيجار وعملة عند إرسال طلبك، ويحتفظ بهما في سجل الطلب.",
+      "room_title": "اختر نوع غرفتك",
+      "room_notice": "اختر نوعاً متاحاً قبل الإرسال. السعر لسرير واحد وليس للغرفة كاملة. لا يمكن اختيار الأنواع الممتلئة.",
+      "clear_room": "إلغاء اختيار نوع الغرفة غير المتاح",
       "message_title": "ملاحظة للمالك",
       "message_notice": "اختيارية. يمكن لمالك العقار فقط مراجعة هذه الرسالة مع طلبك. تجنب المعلومات الشخصية الحساسة.",
       "message_label": "رسالتك (اختيارية)",
@@ -237,7 +260,7 @@ class CodegenLoader extends AssetLoader{
       "unavailable": "لا يمكن إرسال طلب جديد لهذا المكان",
       "no_payment": "لا يتم الدفع هنا. إرسال الطلب لا يؤكد السكن.",
       "leave_title": "مغادرة شاشة الطلب؟",
-      "leave_draft": "لم تُرسل رسالتك بعد. تؤدي المغادرة إلى تجاهل هذه المسودة، أو يمكنك البقاء وإكمالها.",
+      "leave_draft": "لم يُرسل طلبك بعد. تؤدي المغادرة إلى تجاهل الرسالة واختيار الغرفة، أو يمكنك البقاء وإكمال الطلب.",
       "leave_uncertain": "قد يكون طلبك وصل إلى الخادم بالفعل. المغادرة لا تلغيه. راجع تبويب الطلبات قبل بدء طلب آخر."
     },
     "detail": {
@@ -250,6 +273,7 @@ class CodegenLoader extends AssetLoader{
       "no_message": "لم تُضف رسالة إلى هذا الطلب.",
       "property": "تفاصيل العقار الحالية",
       "refreshing_property": "جارٍ التحقق من أحدث توفر في العقار...",
+      "room_availability": "{type}: {available} سرير متاح حالياً",
       "manage_property": "إدارة العقار",
       "view_property": "عرض العقار",
       "review": "مراجعة هذا الطلب",
@@ -290,6 +314,9 @@ class CodegenLoader extends AssetLoader{
       "not_found": "هذا الطلب أو العقار غير متاح، أو لا يمكن لحسابك الوصول إليه.",
       "forbidden": "حسابك غير مسموح له بتنفيذ إجراء الحجز هذا.",
       "full": "لا يوجد سرير متاح حالياً. الطلبات المعلقة لا تحجز سعة.",
+      "room_type_required": "اختر نوع غرفة متاحاً قبل إرسال طلبك.",
+      "room_type_unavailable": "نوع الغرفة هذا لم يعد معروضاً. اختر نوعاً آخر متاحاً أو ألغِ الاختيار إذا أصبح العقار يستخدم سعراً واحداً.",
+      "room_type_full": "لا يوجد سرير متاح حالياً في نوع الغرفة المختار. قد توجد أماكن في أنواع أخرى.",
       "unpublished": "يجب نشر العقار قبل إرسال طلب أو قبوله. ما زال بالإمكان رفض الطلبات الموجودة أو إلغاؤها.",
       "unsupported_unit": "تدعم طلبات الحجز حالياً الإعلانات المسعرة لكل سرير فقط. لا يمكن حجز أسعار الغرفة أو العقار الكامل كسرير واحد.",
       "active_exists": "لديك بالفعل طلب معلق أو مقبول لهذا العقار. تحقق من أحدث حالة لعرضه.",
@@ -664,6 +691,22 @@ static const Map<String,dynamic> _en = {
       "per_room": "Per room",
       "per_property": "Per property"
     },
+    "room_types": {
+      "double": "Double room",
+      "triple": "Triple room"
+    },
+    "room_options": {
+      "editor_title": "Prices by room type (optional)",
+      "editor_notice": "Enable the room types in this property. All beds in a type share one monthly price. Leave both off to use a single price for the listing.",
+      "beds_per_room": "{count} beds per room",
+      "room_count": "Number of rooms of this type",
+      "monthly_rent": "Monthly rent per bed",
+      "capacity_notice": "Total bed capacity is calculated from the rooms you add.",
+      "total_capacity": "Total capacity from your rooms: {total} beds",
+      "from_price": "From {price}",
+      "price_caption": "Per bed in a {type}, per month",
+      "student_notice": "Compare prices per bed below. Choose an available room type when you request a bed."
+    },
     "status": {
       "draft": "Draft",
       "published": "Published",
@@ -741,6 +784,8 @@ static const Map<String,dynamic> _en = {
       "currency": "Use an uppercase three-letter currency code, such as EGP.",
       "total_beds": "Enter a positive whole number of beds within the supported range.",
       "occupied_beds": "Capacity cannot be lower than the number of occupied beds.",
+      "room_count": "Enter a positive whole number of rooms within the supported range.",
+      "room_options": "Use per-bed pricing and configure each room type only once.",
       "location": "Choose a valid location on the map.",
       "location_required": "Choose and save an exact map pin before publishing or calculating routes."
     },
@@ -752,7 +797,7 @@ static const Map<String,dynamic> _en = {
       "forbidden": "Your account is not allowed to perform this action.",
       "conflict": "This property changed elsewhere. Your edits are still here; reload the latest version before saving again.",
       "save_uncertain": "We could not confirm whether the save reached the server. Your edits are still here. Check your properties or reload before another save to avoid duplicates or overwriting newer changes.",
-      "setup_required": "Listing locations are not configured yet. Apply supabase/007_university_discovery.sql and configure the routing function, then retry.",
+      "setup_required": "The listing service is not fully configured. Apply the database upgrades in SETUP.md, including 010_room_type_pricing.sql, and configure routing, then retry.",
       "invalid_response": "We could not safely read the property data. Reload before making changes.",
       "save_failed": "The property could not be saved. Your edits have been kept.",
       "request_failed": "We could not reach the property service. Check your connection and retry.",
@@ -760,7 +805,8 @@ static const Map<String,dynamic> _en = {
       "routes_changed": "A map pin changed while routes were calculated. Save the latest pin, then refresh its walking connections.",
       "routes_rate_limited": "The routing service has reached its usage limit. Your property is saved; try the route calculation later.",
       "selection_failed": "We could not remember your university on this device. You can still browse and choose again next time.",
-      "pricing_unit_locked": "This pricing unit cannot change while the property has active booking requests."
+      "pricing_unit_locked": "This pricing unit cannot change while the property has active booking requests.",
+      "room_options_locked": "Room types cannot be removed while they have pending or accepted requests. Existing requests without a room type must be resolved before enabling room types."
     },
     "discovery": {
       "eyebrow": "YOUR CAMPUS. YOUR NEXT CHAPTER.",
@@ -808,6 +854,7 @@ static const Map<String,dynamic> _en = {
     "open_request": "View request",
     "quote": "Rent quoted at submission",
     "one_bed_monthly": "For one bed, per month",
+    "room_type": "Selected room type: {type}",
     "pending_notice": "A pending request is not a reservation. A bed is held only after the landlord accepts it.",
     "property_unavailable": "Property no longer public",
     "property_unavailable_body": "The property is no longer public or its latest details could not be loaded. Your request and original quote are kept.",
@@ -848,6 +895,9 @@ static const Map<String,dynamic> _en = {
       "recorded": "Your request is recorded.",
       "existing": "You already have a request here.",
       "price_notice": "This is the current advertised rent. The server records the latest rent and currency when you send your request; that quote is kept in your request history.",
+      "room_title": "Choose your room type",
+      "room_notice": "Select one available type before sending. The price is for one bed, not the whole room. Full types cannot be selected.",
+      "clear_room": "Clear the unavailable room selection",
       "message_title": "A note for the landlord",
       "message_notice": "Optional. Only the property owner can review this message with your request. Avoid sensitive personal information.",
       "message_label": "Your message (optional)",
@@ -857,7 +907,7 @@ static const Map<String,dynamic> _en = {
       "unavailable": "This place cannot take a new request",
       "no_payment": "No payment is taken here. Sending a request does not confirm accommodation.",
       "leave_title": "Leave this request screen?",
-      "leave_draft": "Your message has not been sent. Leaving discards this draft, or you can stay and finish it.",
+      "leave_draft": "Your request has not been sent. Leaving discards your message and room choice, or you can stay and finish it.",
       "leave_uncertain": "Your request may already have reached the server. Leaving does not cancel it. Check the Requests tab before starting another request."
     },
     "detail": {
@@ -870,6 +920,7 @@ static const Map<String,dynamic> _en = {
       "no_message": "No message was added to this request.",
       "property": "Current property details",
       "refreshing_property": "Checking the property's latest availability...",
+      "room_availability": "{type}: {available} beds currently available",
       "manage_property": "Manage property",
       "view_property": "View property",
       "review": "Review this request",
@@ -910,6 +961,9 @@ static const Map<String,dynamic> _en = {
       "not_found": "This request or property is unavailable, or your account cannot access it.",
       "forbidden": "Your account is not allowed to perform this booking action.",
       "full": "No bed is currently available. Pending requests do not reserve capacity.",
+      "room_type_required": "Choose an available room type before sending your request.",
+      "room_type_unavailable": "This room type is no longer offered. Choose another available type or clear your selection if the property now uses a single price.",
+      "room_type_full": "No bed is currently available in the selected room type. Other room types may still have space.",
       "unpublished": "This property must be published before a request can be sent or accepted. Existing requests can still be declined or cancelled.",
       "unsupported_unit": "Booking requests currently support per-bed listings only. Per-room and whole-property prices cannot be booked as one bed.",
       "active_exists": "You already have a pending or accepted request for this property. Check the latest status to view it.",

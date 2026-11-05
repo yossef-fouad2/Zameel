@@ -1,5 +1,6 @@
 import '../../../imports/imports.dart';
 import '../../../data/models/booking.dart';
+import '../../../data/models/listing.dart';
 import '../../listings/widgets/listing_ui.dart';
 import '../booking_request_cubit.dart';
 import '../widgets/booking_ui.dart';
@@ -11,12 +12,14 @@ class BookingRequestView extends StatelessWidget {
     required this.onBack,
     required this.onReload,
     required this.onMessage,
+    required this.onRoomType,
     required this.onSubmit,
     required this.onViewRequest,
   });
   final BookingRequestState state;
   final VoidCallback onBack, onReload, onSubmit, onViewRequest;
   final ValueChanged<String> onMessage;
+  final ValueChanged<ListingRoomType?> onRoomType;
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +76,10 @@ class BookingRequestView extends StatelessWidget {
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              ListingPrice(listing: listing),
+                              ListingPrice(
+                                  key: const ValueKey('booking.selected_price'),
+                                  listing: listing,
+                                  roomOption: state.selectedRoomOption),
                               const SizedBox(height: 14),
                               KinshipPill(
                                   label:
@@ -88,8 +94,45 @@ class BookingRequestView extends StatelessWidget {
                                       color: context.colors.onSurfaceVariant)),
                             ])),
                     const SizedBox(height: 20),
-                    ListingSection(
+                    if (listing.hasRoomOptions) ...[
+                      ListingSection(
                         number: '01',
+                        title: 'bookings.request.room_title'.tr(),
+                        subtitle: 'bookings.request.room_notice'.tr(),
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: RadioGroup<ListingRoomType>(
+                            groupValue: state.roomType,
+                            onChanged: onRoomType,
+                            child: Column(children: [
+                              for (final option in listing.roomOptions)
+                                RadioListTile<ListingRoomType>(
+                                  key: ValueKey(
+                                      'booking.room.${option.type.value}'),
+                                  value: option.type,
+                                  enabled:
+                                      state.canEdit && option.availableBeds > 0,
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 10),
+                                    child: ListingRoomDetails(
+                                        listing: listing, option: option),
+                                  ),
+                                ),
+                            ]),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ] else if (state.roomType != null)
+                      TextButton(
+                        onPressed:
+                            state.canEdit ? () => onRoomType(null) : null,
+                        child: Text('bookings.request.clear_room'.tr()),
+                      ),
+                    ListingSection(
+                        number: listing.hasRoomOptions ? '02' : '01',
                         title: 'bookings.request.message_title'.tr(),
                         subtitle: 'bookings.request.message_notice'.tr(),
                         child: Column(
@@ -134,6 +177,8 @@ class BookingRequestView extends StatelessWidget {
                             onPressed: state.isSubmitting ? null : onReload)),
                   if (state.hasLoaded &&
                       state.unavailableReason != null &&
+                      state.unavailableReason !=
+                          'bookings.errors.room_type_required' &&
                       !state.isUncertain) ...[
                     const SizedBox(height: 16),
                     HousingMessage(

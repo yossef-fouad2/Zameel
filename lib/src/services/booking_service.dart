@@ -16,7 +16,7 @@ class BookingService {
   static final instance = BookingService();
   static const _fields =
       'id,listing_id,student_id,request_id,status,message,snapshot_monthly_rent,'
-      'snapshot_currency,snapshot_pricing_unit,snapshot_occupied_beds,'
+      'snapshot_currency,snapshot_pricing_unit,room_type,snapshot_occupied_beds,'
       'snapshot_total_beds,requested_at,responded_at,cancelled_at,updated_at';
   static final _uuid = RegExp(
       r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
@@ -201,6 +201,7 @@ class BookingService {
     required String listingId,
     required String requestId,
     String? message,
+    ListingRoomType? roomType,
   }) =>
       _task(userId, () async {
         _validateId(listingId);
@@ -217,6 +218,7 @@ class BookingService {
                   'p_listing_id': listingId,
                   'p_request_id': requestId,
                   'p_message': normalized,
+                  'p_room_type': roomType?.value,
                 })
                 .single()
                 .retry(enabled: false)
@@ -226,7 +228,8 @@ class BookingService {
         if (booking.studentId != userId ||
             booking.listingId != listingId ||
             booking.requestId != requestId ||
-            booking.message != normalized) {
+            booking.message != normalized ||
+            booking.roomType != roomType) {
           throw const FormatException('Unexpected submitted booking');
         }
         return booking;
@@ -264,6 +267,7 @@ class BookingService {
             saved.monthlyRent != booking.monthlyRent ||
             saved.currency != booking.currency ||
             saved.pricingUnit != booking.pricingUnit ||
+            saved.roomType != booking.roomType ||
             saved.occupiedBeds != booking.occupiedBeds ||
             saved.totalBeds != booking.totalBeds ||
             DateTime.parse(saved.requestedAt) !=
@@ -301,6 +305,9 @@ class BookingService {
           ('42501', 'booking_not_accessible') =>
             'not_found',
           ('22023', 'listing_full') => 'full',
+          ('22023', 'room_type_required') => 'room_type_required',
+          ('22023', 'room_type_unavailable') => 'room_type_unavailable',
+          ('22023', 'room_type_full') => 'room_type_full',
           ('22023', 'listing_not_published') => 'unpublished',
           ('22023', 'pricing_unit_not_supported') => 'unsupported_unit',
           ('22023', 'active_booking_already_exists') => 'active_exists',

@@ -92,6 +92,17 @@ Future<void> _type(WidgetTester tester, String label, String value) async {
   await tester.pump();
 }
 
+Future<void> _typeRoomField(
+    WidgetTester tester, String name, String value) async {
+  final field = find.byWidgetPredicate((widget) =>
+      widget.key is ValueKey<String> &&
+      (widget.key! as ValueKey<String>).value.startsWith('listing.$name.'));
+  await Scrollable.ensureVisible(field.evaluate().single, alignment: .3);
+  await tester.pumpAndSettle();
+  await tester.enterText(field, value);
+  await tester.pump();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
@@ -158,6 +169,55 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.publishes, 1);
     expect(repository.listings['listing-1']!.status, ListingStatus.published);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'owner configures double and triple bed prices and edits saved options',
+      (tester) async {
+    final repository = FakeListingRepository();
+    await _pumpHousing(tester, repository);
+    await _tapButton(tester, 'listings.landlord.create'.tr());
+    await _type(tester, 'listings.fields.title'.tr(), 'Mixed room home');
+    for (final type in ListingRoomType.values) {
+      final toggle = find.byKey(ValueKey('listing.room.${type.value}'));
+      await Scrollable.ensureVisible(toggle.evaluate().single, alignment: .3);
+      await tester.pumpAndSettle();
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      await _typeRoomField(tester, '${type.value}RoomCount', '1');
+      await _typeRoomField(tester, '${type.value}MonthlyRent',
+          type == ListingRoomType.doubleRoom ? '2000' : '1250');
+    }
+    expect(repository.creates, 0);
+    expect(
+        find.widgetWithText(TextFormField, 'listings.fields.total_beds'.tr()),
+        findsNothing);
+    await _tapButton(tester, 'listings.editor.save'.tr());
+    final saved = repository.listings.values.single;
+    expect(saved.roomOptions, hasLength(2));
+    expect(saved.totalBeds, 5);
+    expect(saved.monthlyRent, 1250);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    final card = find.byType(PropertyListingCard);
+    await Scrollable.ensureVisible(card.evaluate().single, alignment: .3);
+    await tester.pumpAndSettle();
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    await _typeRoomField(tester, 'doubleMonthlyRent', '2100.50');
+    await _tapButton(tester, 'listings.editor.save'.tr());
+    expect(repository.updates, 1);
+    expect(
+        repository.listings.values.single
+            .roomOption(ListingRoomType.doubleRoom)!
+            .monthlyRent,
+        2100.50);
+    expect(
+        repository.listings.values.single
+            .roomOption(ListingRoomType.tripleRoom)!
+            .monthlyRent,
+        1250);
     expect(tester.takeException(), isNull);
   });
 
@@ -270,7 +330,7 @@ void main() {
     testWidgets('landlord views fit $size $locale $scale $brightness',
         (tester) async {
       final repository = FakeListingRepository()
-        ..listings['listing-1'] = testListing();
+        ..listings['listing-1'] = testListing(roomOptions: testRoomOptions);
       final router = await _pumpHousing(tester, repository,
           size: size, locale: locale, scale: scale, brightness: brightness);
       expect(tester.takeException(), isNull);
@@ -286,8 +346,10 @@ void main() {
         'student discovery and details fit $size $locale $scale $brightness',
         (tester) async {
       final repository = FakeListingRepository()
-        ..listings['home'] =
-            testListing(id: 'home', status: ListingStatus.published)
+        ..listings['home'] = testListing(
+            id: 'home',
+            status: ListingStatus.published,
+            roomOptions: testRoomOptions)
         ..routes['home'] = [testRoute()];
       final preferences = FakePreferencesRepository()
         ..values[student.id] = const LifestylePreferences(isSkipped: true);

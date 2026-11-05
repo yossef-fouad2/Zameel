@@ -214,6 +214,78 @@ void main() {
   });
 
   testWidgets(
+      'student chooses a room type, sees its price and keeps it in the request',
+      (tester) async {
+    final bookings = repository()
+      ..listings.listings['listing-1'] =
+          bookingListing(roomOptions: testRoomOptions);
+    final router = await _pumpBookings(tester, bookings);
+    router.pushNamed('bookingRequest',
+        pathParameters: {'listingId': 'listing-1'});
+    await tester.pumpAndSettle();
+    await _tap(tester, find.byKey(const ValueKey('booking.room.double')));
+    var price = tester.widget<ListingPrice>(
+        find.byKey(const ValueKey('booking.selected_price')));
+    expect(price.roomOption!.monthlyRent, 2000);
+    await _tap(tester, find.byKey(const ValueKey('booking.room.triple')));
+    await tester.dragUntilVisible(
+        find.byKey(const ValueKey('booking.selected_price')),
+        find.byType(Scrollable).first,
+        const Offset(0, 180));
+    await tester.pumpAndSettle();
+    price = tester.widget<ListingPrice>(
+        find.byKey(const ValueKey('booking.selected_price')));
+    expect(price.roomOption!.monthlyRent, 1250);
+    expect(bookings.submissions, isEmpty);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget,
+        reason: 'A room-only draft must be protected');
+    await tester.tap(find.text('bookings.stay'.tr()));
+    await tester.pumpAndSettle();
+    await _tap(tester, find.byKey(const ValueKey('booking.submit')));
+    expect(bookings.submissions.single.roomType, ListingRoomType.tripleRoom);
+    expect(bookings.bookings.values.single.monthlyRent, 1250);
+    await _button(tester, 'bookings.open_request');
+    expect(
+        tester.widget<BookingQuote>(find.byType(BookingQuote)).booking.roomType,
+        ListingRoomType.tripleRoom);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'full room types are visible but disabled while another type is available',
+      (tester) async {
+    final bookings = repository()
+      ..listings.listings['listing-1'] = bookingListing(roomOptions: [
+        const ListingRoomOption(
+            type: ListingRoomType.doubleRoom,
+            roomCount: 1,
+            monthlyRent: 2000,
+            occupiedBeds: 2),
+        testRoomOptions.last,
+      ]);
+    final router = await _pumpBookings(tester, bookings);
+    router.pushNamed('bookingRequest',
+        pathParameters: {'listingId': 'listing-1'});
+    await tester.pumpAndSettle();
+    final full = find.byKey(const ValueKey('booking.room.double'));
+    await _tap(tester, full);
+    expect(
+        tester.widget<RadioListTile<ListingRoomType>>(full).enabled, isFalse);
+    expect(
+        tester
+            .widget<ListingPrice>(
+                find.byKey(const ValueKey('booking.selected_price')))
+            .roomOption,
+        isNull);
+    await _tap(tester, find.byKey(const ValueKey('booking.room.triple')));
+    await _tap(tester, find.byKey(const ValueKey('booking.submit')));
+    expect(bookings.submissions.single.roomType, ListingRoomType.tripleRoom);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
       'archived accepted request remains cancellable without leaking listing details',
       (tester) async {
     final bookings = repository()
@@ -352,8 +424,11 @@ void main() {
       testWidgets('booking views fit $size $locale $scale owner=$owner',
           (tester) async {
         final bookings = repository()
-          ..bookings['booking-1'] =
-              testBooking(message: 'A longer request message ' * 20);
+          ..listings.listings['listing-1'] =
+              bookingListing(roomOptions: testRoomOptions)
+          ..bookings['booking-1'] = testBooking(
+              message: 'A longer request message ' * 20,
+              roomType: ListingRoomType.doubleRoom);
         final router = await _pumpBookings(tester, bookings,
             auth: FakeAuthRepository()..user = owner ? landlord : student,
             size: size,
@@ -382,6 +457,7 @@ void main() {
           router.pushNamed('bookingRequest',
               pathParameters: {'listingId': 'listing-1'});
           await tester.pumpAndSettle();
+          await _tap(tester, find.byKey(const ValueKey('booking.room.double')));
           await _tap(tester, find.byType(TextFormField));
           await tester.enterText(
               find.byType(TextFormField), 'A keyboard-visible message');

@@ -159,6 +159,7 @@ class ListingService {
             .validate(
               requireLocation: original.status == ListingStatus.published,
               occupiedBeds: original.occupiedBeds,
+              originalRoomOptions: original.roomOptions,
             )
             .isNotEmpty) {
           throw const ServerFailure('listings.errors.invalid_details');
@@ -315,7 +316,7 @@ class ListingService {
         final response = await _io(
           userId,
           () => _supabase.rpc<Object?>(
-            'search_listings_by_university',
+            'search_listings_by_university_v2',
             params: {
               'p_university_id': universityId,
               'p_after_distance_m': afterDistanceMeters,
@@ -454,6 +455,11 @@ class ListingService {
         if (error.code == '22023' &&
             error.message == 'pricing_unit_has_active_bookings') {
           return ServerFailure('listings.errors.pricing_unit_locked',
+              error: error);
+        }
+        if (error.code == '22023' &&
+            error.message == 'room_options_have_active_bookings') {
+          return ServerFailure('listings.errors.room_options_locked',
               error: error);
         }
         if (error.code == '23514' &&

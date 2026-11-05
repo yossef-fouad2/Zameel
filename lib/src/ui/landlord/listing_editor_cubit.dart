@@ -202,18 +202,39 @@ class ListingEditorCubit extends Cubit<ListingEditorState> {
     PricingUnit? pricingUnit,
     String? totalBeds,
     GeoPoint? location,
+    ListingRoomType? roomType,
+    bool? roomEnabled,
+    String? roomCount,
+    String? roomMonthlyRent,
   }) {
     if (!state.hasLoaded || state.isLoading || state.isSaving) return;
     if (location != null && !location.isValid) return;
+    var options = state.draft.roomOptions;
+    if (roomType != null) {
+      final previous = state.draft.roomOption(roomType);
+      options = [
+        for (final type in ListingRoomType.values)
+          if (type == roomType) ...[
+            if (roomEnabled ?? true)
+              ListingRoomDraft(
+                type: type,
+                roomCount: roomCount ?? previous?.roomCount ?? '',
+                monthlyRent: roomMonthlyRent ?? previous?.monthlyRent ?? '',
+              ),
+          ] else if (state.draft.roomOption(type) != null)
+            state.draft.roomOption(type)!,
+      ];
+    }
     final next = state.draft.copyWith(
       title: title,
       description: description,
       address: address,
       monthlyRent: monthlyRent,
       currency: currency,
-      pricingUnit: pricingUnit,
+      pricingUnit: options.isNotEmpty ? PricingUnit.perBed : pricingUnit,
       totalBeds: totalBeds,
       location: location,
+      roomOptions: options,
     );
     final moved = next.location != state.draft.location;
     if (moved) ++_routeGeneration;
@@ -249,6 +270,7 @@ class ListingEditorCubit extends Cubit<ListingEditorState> {
     final errors = state.draft.validate(
       requireLocation: state.original?.status == ListingStatus.published,
       occupiedBeds: state.original?.occupiedBeds ?? 0,
+      originalRoomOptions: state.original?.roomOptions ?? const [],
     );
     if (errors.isNotEmpty) {
       emit(state.copyWith(

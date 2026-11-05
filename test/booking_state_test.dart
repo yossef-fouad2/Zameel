@@ -111,6 +111,144 @@ void main() {
     expect(bookings.submissions, isEmpty);
   });
 
+  for (final type in ListingRoomType.values) {
+    test('request requires an explicit $type and snapshots its per-bed price',
+        () async {
+      listings.listings['listing-1'] =
+          bookingListing(roomOptions: testRoomOptions);
+      final cubit = request();
+      await cubit.load();
+      expect(cubit.state.canSubmit, isFalse);
+      expect(cubit.state.roomType, isNull);
+      await cubit.submit();
+      expect(bookings.submissions, isEmpty);
+      cubit.changeRoomType(type);
+      expect(cubit.state.isDirty, isTrue);
+      expect(cubit.state.canSubmit, isTrue);
+      expect(bookings.submissions, isEmpty);
+      final rent = cubit.state.selectedRoomOption!.monthlyRent;
+      await cubit.submit();
+      expect(bookings.submissions.single.roomType, type);
+      expect(cubit.state.booking!.roomType, type);
+      expect(cubit.state.booking!.monthlyRent, rent);
+      expect(listings.listings['listing-1']!.occupiedBeds, 0);
+    });
+  }
+
+  test('full types cannot be selected, even when another type has beds',
+      () async {
+    listings.listings['listing-1'] = bookingListing(roomOptions: [
+      testRoomOptions.first,
+      const ListingRoomOption(
+          type: ListingRoomType.tripleRoom,
+          roomCount: 1,
+          monthlyRent: 1250,
+          occupiedBeds: 3),
+    ]);
+    final cubit = request();
+    await cubit.load();
+    cubit.changeRoomType(ListingRoomType.tripleRoom);
+    expect(cubit.state.roomType, isNull);
+    expect(cubit.state.canSubmit, isFalse);
+    cubit.changeRoomType(ListingRoomType.doubleRoom);
+    expect(cubit.state.canSubmit, isTrue);
+  });
+
+  test('reload never silently replaces a removed room selection', () async {
+    listings.listings['listing-1'] =
+        bookingListing(roomOptions: testRoomOptions);
+    final cubit = request();
+    await cubit.load();
+    cubit.changeRoomType(ListingRoomType.doubleRoom);
+    listings.listings['listing-1'] =
+        bookingListing(roomOptions: [testRoomOptions.last]);
+    await cubit.load();
+    expect(cubit.state.roomType, ListingRoomType.doubleRoom);
+    expect(cubit.state.canSubmit, isFalse);
+    expect(
+        cubit.state.unavailableReason, 'bookings.errors.room_type_unavailable');
+    cubit.changeRoomType(ListingRoomType.tripleRoom);
+    expect(cubit.state.canSubmit, isTrue);
+    listings.listings['listing-1'] = bookingListing();
+    await cubit.load();
+    expect(cubit.state.canSubmit, isFalse);
+    cubit.changeRoomType(null);
+    expect(cubit.state.canSubmit, isTrue);
+    expect(cubit.state.isDirty, isFalse);
+  });
+
+  test('uncertain request freezes room type along with message and attempt ID',
+      () async {
+    listings.listings['listing-1'] =
+        bookingListing(roomOptions: testRoomOptions);
+    final cubit = request(idFactory: () => 'request-1');
+    await cubit.load();
+    cubit.changeRoomType(ListingRoomType.doubleRoom);
+    bookings.submitFailure = const BookingWriteUncertainFailure();
+    await cubit.submit();
+    cubit.changeRoomType(ListingRoomType.tripleRoom);
+    cubit.changeRoomType(null);
+    await cubit.load();
+    expect(cubit.state.roomType, ListingRoomType.doubleRoom);
+    expect(cubit.state.isUncertain, isTrue);
+    bookings.submitFailure = null;
+    await cubit.submit();
+    expect(bookings.submissions, hasLength(2));
+    expect(bookings.submissions.first, bookings.submissions.last);
+    expect(cubit.state.booking!.roomType, ListingRoomType.doubleRoom);
+    expect(cubit.state.booking!.monthlyRent, 2000);
+  });
+
+  test('accept and cancel change only the selected type and keep its quote',
+      () async {
+    listings.listings['listing-1'] =
+        bookingListing(roomOptions: testRoomOptions);
+    bookings.bookings['booking-1'] =
+        testBooking(roomType: ListingRoomType.doubleRoom, rent: 1800);
+    final owner = detail(role: UserRole.landlord);
+    await owner.load();
+    await owner.act(BookingAction.accept);
+    var listing = listings.listings['listing-1']!;
+    expect(listing.occupiedBeds, 1);
+    expect(listing.roomOption(ListingRoomType.doubleRoom)!.availableBeds, 1);
+    expect(listing.roomOption(ListingRoomType.tripleRoom)!.availableBeds, 3);
+    expect(owner.state.booking!.monthlyRent, 1800);
+    final student = detail();
+    await student.load();
+    await student.act(BookingAction.cancel);
+    listing = listings.listings['listing-1']!;
+    expect(listing.occupiedBeds, 0);
+    expect(listing.roomOption(ListingRoomType.doubleRoom)!.availableBeds, 2);
+    expect(listing.roomOption(ListingRoomType.tripleRoom)!.availableBeds, 3);
+    expect(student.state.booking!.roomType, ListingRoomType.doubleRoom);
+    expect(student.state.booking!.monthlyRent, 1800);
+  });
+
+  test('a selected-type last-bed race cannot allocate a different type',
+      () async {
+    listings.listings['listing-1'] =
+        bookingListing(roomOptions: testRoomOptions);
+    bookings.bookings['booking-1'] =
+        testBooking(roomType: ListingRoomType.doubleRoom);
+    final owner = detail(role: UserRole.landlord);
+    await owner.load();
+    listings.listings['listing-1'] = bookingListing(roomOptions: [
+      const ListingRoomOption(
+          type: ListingRoomType.doubleRoom,
+          roomCount: 1,
+          monthlyRent: 2000,
+          occupiedBeds: 2),
+      testRoomOptions.last,
+    ]);
+    await owner.act(BookingAction.accept);
+    expect(owner.state.errorMessage, 'bookings.errors.room_type_full');
+    expect(bookings.bookings['booking-1']!.status, BookingStatus.pending);
+    expect(listings.listings['listing-1']!.availableBeds, 3);
+    await owner.load();
+    expect(owner.state.canAct(BookingAction.accept), isFalse);
+    expect(owner.state.canAct(BookingAction.reject), isTrue);
+  });
+
   for (final status in [BookingStatus.pending, BookingStatus.accepted]) {
     test('existing $status request opens history rather than submitting again',
         () async {

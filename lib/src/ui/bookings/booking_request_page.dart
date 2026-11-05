@@ -89,6 +89,7 @@ class _RequestBindingState extends State<_RequestBinding> {
               onBack: _leave,
               onReload: cubit.load,
               onMessage: cubit.changeMessage,
+              onRoomType: cubit.changeRoomType,
               onSubmit: () {
                 FocusScope.of(context).unfocus();
                 cubit.submit();

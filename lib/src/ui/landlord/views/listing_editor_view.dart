@@ -12,7 +12,11 @@ typedef ListingDraftChanged = void Function(
     String? currency,
     PricingUnit? pricingUnit,
     String? totalBeds,
-    GeoPoint? location});
+    GeoPoint? location,
+    ListingRoomType? roomType,
+    bool? roomEnabled,
+    String? roomCount,
+    String? roomMonthlyRent});
 
 /// The editor's replaceable presentation. All actions are supplied by its binding.
 class ListingEditorView extends StatelessWidget {
@@ -114,48 +118,84 @@ class ListingEditorView extends StatelessWidget {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
-                                    _field(
-                                        'monthlyRent',
-                                        state.draft.monthlyRent,
-                                        'listings.fields.monthly_rent',
-                                        (value) => onChange(monthlyRent: value),
-                                        keyboard: const TextInputType
-                                            .numberWithOptions(decimal: true)),
+                                    Text(
+                                        'listings.room_options.editor_title'
+                                            .tr(),
+                                        style: context.textTheme.titleSmall),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                        'listings.room_options.editor_notice'
+                                            .tr(),
+                                        style: context.textTheme.bodySmall),
+                                    for (final type in ListingRoomType.values)
+                                      _roomFields(context, type),
+                                    if (state.validationErrors['roomOptions'] !=
+                                        null)
+                                      Text(
+                                          state.validationErrors['roomOptions']!
+                                              .tr(),
+                                          style: context.textTheme.bodySmall
+                                              ?.copyWith(
+                                                  color: context.colors.error)),
                                     const SizedBox(height: 18),
+                                    if (!state.draft.hasRoomOptions) ...[
+                                      _field(
+                                          'monthlyRent',
+                                          state.draft.monthlyRent,
+                                          'listings.fields.monthly_rent',
+                                          (value) =>
+                                              onChange(monthlyRent: value),
+                                          keyboard: const TextInputType
+                                              .numberWithOptions(
+                                              decimal: true)),
+                                      const SizedBox(height: 18),
+                                    ],
                                     _field(
                                         'currency',
                                         state.draft.currency,
                                         'listings.fields.currency',
                                         (value) => onChange(currency: value)),
                                     const SizedBox(height: 18),
-                                    DropdownButtonFormField<PricingUnit>(
-                                      key: ValueKey(
-                                          'listing.pricingUnit.${state.formRevision}'),
-                                      initialValue: state.draft.pricingUnit,
-                                      isExpanded: true,
-                                      decoration: InputDecoration(
-                                          labelText:
-                                              'listings.fields.pricing_unit'
-                                                  .tr()),
-                                      items: [
-                                        for (final unit in PricingUnit.values)
-                                          DropdownMenuItem(
-                                              value: unit,
-                                              child: Text(
-                                                  unit.translationKey.tr()))
-                                      ],
-                                      onChanged: state.isSaving
-                                          ? null
-                                          : (value) =>
-                                              onChange(pricingUnit: value),
-                                    ),
-                                    const SizedBox(height: 18),
-                                    _field(
-                                        'totalBeds',
-                                        state.draft.totalBeds,
-                                        'listings.fields.total_beds',
-                                        (value) => onChange(totalBeds: value),
-                                        keyboard: TextInputType.number),
+                                    if (!state.draft.hasRoomOptions) ...[
+                                      DropdownButtonFormField<PricingUnit>(
+                                        key: ValueKey(
+                                            'listing.pricingUnit.${state.formRevision}.${state.draft.pricingUnit.name}'),
+                                        initialValue: state.draft.pricingUnit,
+                                        isExpanded: true,
+                                        decoration: InputDecoration(
+                                            labelText:
+                                                'listings.fields.pricing_unit'
+                                                    .tr()),
+                                        items: [
+                                          for (final unit in PricingUnit.values)
+                                            DropdownMenuItem(
+                                                value: unit,
+                                                child: Text(
+                                                    unit.translationKey.tr()))
+                                        ],
+                                        onChanged: state.isSaving
+                                            ? null
+                                            : (value) =>
+                                                onChange(pricingUnit: value),
+                                      ),
+                                      const SizedBox(height: 18),
+                                      _field(
+                                          'totalBeds',
+                                          state.draft.totalBeds,
+                                          'listings.fields.total_beds',
+                                          (value) => onChange(totalBeds: value),
+                                          keyboard: TextInputType.number),
+                                    ] else
+                                      Text(
+                                          state.draft.roomBedCapacity == null
+                                              ? 'listings.room_options.capacity_notice'
+                                                  .tr()
+                                              : 'listings.room_options.total_capacity'
+                                                  .tr(namedArgs: {
+                                                  'total':
+                                                      '${state.draft.roomBedCapacity}',
+                                                }),
+                                          style: context.textTheme.bodyMedium),
                                     if (state.original != null) ...[
                                       const SizedBox(height: 12),
                                       Text(
@@ -328,6 +368,55 @@ class ListingEditorView extends StatelessWidget {
           ),
         ))),
       );
+
+  Widget _roomFields(BuildContext context, ListingRoomType type) {
+    final option = state.draft.roomOption(type);
+    final occupied = state.original?.roomOption(type)?.occupiedBeds ?? 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          type: MaterialType.transparency,
+          child: SwitchListTile.adaptive(
+            key: ValueKey('listing.room.${type.value}'),
+            contentPadding: EdgeInsets.zero,
+            title: Text(type.translationKey.tr()),
+            subtitle: Text('listings.room_options.beds_per_room'.tr(namedArgs: {
+              'count': '${type.bedsPerRoom}',
+            })),
+            value: option != null,
+            onChanged: state.isSaving
+                ? null
+                : (enabled) => onChange(roomType: type, roomEnabled: enabled),
+          ),
+        ),
+        if (option != null) ...[
+          _field(
+              '${type.value}RoomCount',
+              option.roomCount,
+              'listings.room_options.room_count',
+              (value) => onChange(roomType: type, roomCount: value),
+              keyboard: TextInputType.number),
+          const SizedBox(height: 18),
+          _field(
+              '${type.value}MonthlyRent',
+              option.monthlyRent,
+              'listings.room_options.monthly_rent',
+              (value) => onChange(roomType: type, roomMonthlyRent: value),
+              keyboard: const TextInputType.numberWithOptions(decimal: true)),
+          if (occupied > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+                'listings.editor.occupancy_note'.tr(namedArgs: {
+                  'occupied': '$occupied',
+                }),
+                style: context.textTheme.bodySmall),
+          ],
+          const SizedBox(height: 18),
+        ],
+      ],
+    );
+  }
 
   Widget _field(
           String name, String value, String label, ValueChanged<String> changed,

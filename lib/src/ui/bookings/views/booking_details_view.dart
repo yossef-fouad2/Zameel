@@ -1,6 +1,5 @@
 import '../../../imports/imports.dart';
 import '../../../data/models/booking.dart';
-import '../../../data/models/listing.dart';
 import '../../listings/widgets/listing_ui.dart';
 import '../booking_details_cubit.dart';
 import '../widgets/booking_ui.dart';
@@ -143,6 +142,15 @@ class BookingDetailsView extends StatelessWidget {
                             'available': '${listing.availableBeds}',
                             'total': '${listing.totalBeds}',
                           })),
+                          if (booking.roomType != null) ...[
+                            const SizedBox(height: 12),
+                            Text('bookings.detail.room_availability'
+                                .tr(namedArgs: {
+                              'type': booking.roomType!.translationKey.tr(),
+                              'available':
+                                  '${listing.roomOption(booking.roomType)?.availableBeds ?? 0}',
+                            })),
+                          ],
                           if (role == UserRole.landlord) ...[
                             const SizedBox(height: 12),
                             ListingStatusChip(status: listing.status),
@@ -169,13 +177,9 @@ class BookingDetailsView extends StatelessWidget {
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              if (listing != null &&
-                                  (listing.status != ListingStatus.published ||
-                                      listing.availableBeds <= 0)) ...[
-                                Text((listing.status != ListingStatus.published
-                                        ? 'bookings.errors.unpublished'
-                                        : 'bookings.errors.full')
-                                    .tr()),
+                              if (booking.acceptanceUnavailableReason !=
+                                  null) ...[
+                                Text(booking.acceptanceUnavailableReason!.tr()),
                                 const SizedBox(height: 16),
                               ],
                               LayoutBuilder(builder: (context, constraints) {

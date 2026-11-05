@@ -41,6 +41,12 @@ Map<String, Object?> _listingRow() => {
       'total_bed_capacity': 3,
       'occupied_beds': 1,
       'available_beds': 2,
+      'double_room_count': 0,
+      'double_room_monthly_rent': null,
+      'double_room_occupied_beds': 0,
+      'triple_room_count': 0,
+      'triple_room_monthly_rent': null,
+      'triple_room_occupied_beds': 0,
       'status': 'draft',
       'created_at': _serverTime,
       'updated_at': _serverTime,
@@ -115,7 +121,7 @@ void main() {
       row['updated_at'] = _savedTime;
       return response(request, row);
     }
-    if (path.endsWith('/search_listings_by_university')) {
+    if (path.endsWith('/search_listings_by_university_v2')) {
       return response(request, searchRows);
     }
     if (path.endsWith('/listing_university_routes')) {
@@ -286,6 +292,10 @@ void main() {
       'currency',
       'pricing_unit',
       'total_bed_capacity',
+      'double_room_count',
+      'double_room_monthly_rent',
+      'triple_room_count',
+      'triple_room_monthly_rent',
     });
   });
 
@@ -305,6 +315,34 @@ void main() {
     expect(request.url.queryParameters['landlord_id'], 'eq.$_id');
     expect(request.url.queryParameters['id'], 'eq.$_listingId');
     expect(jsonDecode(request.body), _draft.toJson());
+  });
+
+  test('room prices and counts save atomically with the listing CAS', () async {
+    row.addAll({'occupied_beds': 0, 'available_beds': 3});
+    final draft = _draft.copyWith(roomOptions: const [
+      ListingRoomDraft(
+          type: ListingRoomType.doubleRoom,
+          roomCount: '1',
+          monthlyRent: '2000.75'),
+      ListingRoomDraft(
+          type: ListingRoomType.tripleRoom,
+          roomCount: '1',
+          monthlyRent: '1250'),
+    ]);
+    final result = await repository.updateListing(
+        userId: _id, original: current(), draft: draft);
+    final saved = result.getOrElse((failure) => throw failure);
+    expect(saved.roomOptions, hasLength(2));
+    expect(saved.roomOption(ListingRoomType.doubleRoom)!.monthlyRent, 2000.75);
+    expect(saved.totalBeds, 5);
+    expect(saved.monthlyRent, 1250);
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'PATCH');
+    expect(
+        requests.single.url.queryParameters['updated_at'], 'eq.$_serverTime');
+    final payload = jsonDecode(requests.single.body) as Map;
+    expect(payload.keys.where((key) => key.toString().contains('occupied')),
+        isEmpty);
   });
 
   test(
@@ -464,6 +502,12 @@ void main() {
         userId: _id, original: current(), draft: _draft);
     expect(unit.fold((failure) => failure.message, (_) => ''),
         'listings.errors.pricing_unit_locked');
+    handler = (request) async => response(request,
+        {'code': '22023', 'message': 'room_options_have_active_bookings'}, 400);
+    final rooms = await repository.updateListing(
+        userId: _id, original: current(), draft: _draft);
+    expect(rooms.fold((failure) => failure.message, (_) => ''),
+        'listings.errors.room_options_locked');
     handler = (request) async => response(
         request,
         {
@@ -844,8 +888,34 @@ void main() {
       'p_after_listing_id': _listingId,
       'p_limit': 7,
     });
-    expect(
-        requests.single.url.path, '/rest/v1/rpc/search_listings_by_university');
+    expect(requests.single.url.path,
+        '/rest/v1/rpc/search_listings_by_university_v2');
+  });
+
+  test('discovery v2 includes typed bed prices and availability in one request',
+      () async {
+    searchRows = [
+      {
+        ...row,
+        'status': 'published',
+        'distance_m': 1000,
+        'university_id': 1,
+        'double_room_count': 1,
+        'double_room_monthly_rent': 2000,
+        'double_room_occupied_beds': 1,
+        'triple_room_count': 1,
+        'triple_room_monthly_rent': 1200,
+        'total_bed_capacity': 5,
+        'available_beds': 4,
+      }
+    ];
+    final result = await repository.search(userId: _id, universityId: 1);
+    final listing = result.getOrElse((failure) => throw failure).single.listing;
+    expect(listing.roomOption(ListingRoomType.doubleRoom)!.availableBeds, 1);
+    expect(listing.roomOption(ListingRoomType.tripleRoom)!.monthlyRent, 1200);
+    expect(requests, hasLength(1));
+    expect(requests.single.url.path,
+        endsWith('/search_listings_by_university_v2'));
   });
 
   test(

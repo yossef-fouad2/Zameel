@@ -19,6 +19,7 @@ Listing bookingListing({
   int occupied = 0,
   int total = 2,
   double rent = 1500,
+  List<ListingRoomOption> roomOptions = const [],
 }) =>
     Listing(
         id: id,
@@ -27,12 +28,23 @@ Listing bookingListing({
         description: 'Shared accommodation near campus.',
         address: 'Campus street',
         location: testPoint,
-        monthlyRent: rent,
+        monthlyRent: roomOptions.isEmpty
+            ? rent
+            : roomOptions
+                .map((o) => o.monthlyRent)
+                .reduce((a, b) => a < b ? a : b),
         currency: 'EGP',
         pricingUnit: unit,
-        totalBeds: total,
-        occupiedBeds: occupied,
-        availableBeds: total - occupied,
+        totalBeds: roomOptions.isEmpty
+            ? total
+            : roomOptions.fold(0, (sum, o) => sum + o.totalBeds),
+        occupiedBeds: roomOptions.isEmpty
+            ? occupied
+            : roomOptions.fold(0, (sum, o) => sum + o.occupiedBeds),
+        availableBeds: roomOptions.isEmpty
+            ? total - occupied
+            : roomOptions.fold(0, (sum, o) => sum + o.availableBeds),
+        roomOptions: roomOptions,
         status: status,
         updatedAt: bookingTime);
 
@@ -44,6 +56,7 @@ Booking testBooking({
   BookingStatus status = BookingStatus.pending,
   String? message = 'I would like to request a bed.',
   double rent = 1250,
+  ListingRoomType? roomType,
   String requestedAt = bookingTime,
   String? updatedAt,
   Listing? listing,
@@ -58,6 +71,7 @@ Booking testBooking({
         monthlyRent: rent,
         currency: 'EGP',
         pricingUnit: PricingUnit.perBed,
+        roomType: roomType,
         occupiedBeds: 0,
         totalBeds: 2,
         requestedAt: requestedAt,
@@ -88,6 +102,7 @@ Booking copyBooking(
     monthlyRent: old.monthlyRent,
     currency: old.currency,
     pricingUnit: old.pricingUnit,
+    roomType: old.roomType,
     occupiedBeds: old.occupiedBeds,
     totalBeds: old.totalBeds,
     requestedAt: old.requestedAt,
@@ -106,7 +121,8 @@ typedef BookingAttempt = ({
   String userId,
   String listingId,
   String requestId,
-  String? message
+  String? message,
+  ListingRoomType? roomType,
 });
 
 class FakeBookingRepository implements BookingRepository {
@@ -213,12 +229,14 @@ class FakeBookingRepository implements BookingRepository {
     required String listingId,
     required String requestId,
     String? message,
+    ListingRoomType? roomType,
   }) async {
     final attempt = (
       userId: userId,
       listingId: listingId,
       requestId: requestId,
-      message: message
+      message: message,
+      roomType: roomType,
     );
     submissions.add(attempt);
     if (onSubmit != null) return onSubmit!(attempt);
@@ -226,12 +244,19 @@ class FakeBookingRepository implements BookingRepository {
     final same = bookings.values.where(
         (item) => item.studentId == userId && item.requestId == requestId);
     if (same.isNotEmpty) {
+      if (same.first.listingId != listingId ||
+          same.first.message != message ||
+          same.first.roomType != roomType) {
+        return left(const ServerFailure('bookings.errors.request_mismatch'));
+      }
       return right(copyBooking(same.first, clearListing: true));
     }
     final listing = listings.listings[listingId];
     if (listing == null || listing.status != ListingStatus.published) {
       return left(const ServerFailure('bookings.errors.not_found'));
     }
+    final unavailable = listing.bookingUnavailableReason(roomType);
+    if (unavailable != null) return left(ServerFailure(unavailable));
     if (bookings.values.any((item) =>
         item.studentId == userId &&
         item.listingId == listingId &&
@@ -244,7 +269,8 @@ class FakeBookingRepository implements BookingRepository {
         listingId: listingId,
         requestId: requestId,
         message: message,
-        rent: listing.monthlyRent);
+        rent: listing.roomOption(roomType)?.monthlyRent ?? listing.monthlyRent,
+        roomType: roomType);
     bookings[saved.id] = saved;
     return right(saved);
   }
@@ -272,16 +298,8 @@ class FakeBookingRepository implements BookingRepository {
     }
     final listing = _listing(original)!;
     if (action == BookingAction.accept) {
-      if (listing.pricingUnit != PricingUnit.perBed ||
-          original.pricingUnit != PricingUnit.perBed) {
-        return left(const ServerFailure('bookings.errors.unsupported_unit'));
-      }
-      if (listing.status != ListingStatus.published) {
-        return left(const ServerFailure('bookings.errors.unpublished'));
-      }
-      if (listing.availableBeds <= 0) {
-        return left(const ServerFailure('bookings.errors.full'));
-      }
+      final unavailable = listing.bookingUnavailableReason(original.roomType);
+      if (unavailable != null) return left(ServerFailure(unavailable));
     }
     final change = action == BookingAction.accept
         ? 1
@@ -298,6 +316,15 @@ class FakeBookingRepository implements BookingRepository {
           unit: listing.pricingUnit,
           total: listing.totalBeds,
           occupied: listing.occupiedBeds + change,
+          roomOptions: [
+            for (final option in listing.roomOptions)
+              ListingRoomOption(
+                  type: option.type,
+                  roomCount: option.roomCount,
+                  monthlyRent: option.monthlyRent,
+                  occupiedBeds: option.occupiedBeds +
+                      (option.type == original.roomType ? change : 0)),
+          ],
           rent: listing.monthlyRent);
     }
     final saved =
